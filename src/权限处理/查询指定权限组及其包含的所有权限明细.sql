@@ -1,4 +1,5 @@
 -- 定义变量
+/*
 \set GROUP_NAME '极运营/教务管理/班级/查看班级'
 
 -- 查询权限组信息及包含的所有权限
@@ -16,10 +17,9 @@ ON true
     ON perm_id.id = p.id
 WHERE pg.name = :'GROUP_NAME'
 ORDER BY p.id;
-
+*/
 -- 纯sql
 -- 创建临时表存储查询参数
-/*
 CREATE TEMP TABLE temp_params (
                                   param_name TEXT PRIMARY KEY,
                                   param_value TEXT
@@ -46,4 +46,3 @@ ORDER BY p.id;
 
 -- 清理临时表
 DROP TABLE temp_params;
-*/
