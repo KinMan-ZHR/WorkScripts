@@ -1,48 +1,48 @@
--- 通解：
--- 定义变量
-    \set PERMISSION_NAME '极运营/教务管理/班级/导出班级V2'
-    \set SERVER_NAME 'service-education'
-    \set URL '/education/classes/export'
-    \set HTTP_METHOD 'POST'
-    \set LEVEL 'loginAndAuth'
-    \set PERMISSION_TYPE 'URL'
-    \set CHECK_RECOMMIT 'f'
-    \set GROUP_NAME '极运营/教务管理/班级/查看班级'
-
--- 插入新权限
-INSERT INTO "service_user"."permission" (
-    "id", "name", "server_name", "url", "http_method",
-    "create_time", "level", "front", "type", "remark",
-    "check_recommit", "parent_id", "tree_level"
-)
-VALUES (
-           nextval('service_user.permission_id_seq'),
-           :'PERMISSION_NAME',
-           :'SERVER_NAME',
-           :'URL',
-           :'HTTP_METHOD',
-           now(),
-           :'LEVEL',
-           NULL,
-           :'PERMISSION_TYPE',
-           NULL,
-           :'CHECK_RECOMMIT',
-           NULL,
-           NULL
-       );
-
--- 更新权限组
-UPDATE service_user.permission_group
-SET permission_id = array_cat(
-        permission_id,
-        ARRAY(SELECT id FROM service_user.permission
-          WHERE url = :'URL'
-          AND server_name = :'SERVER_NAME')
-                    )
-WHERE name = :'GROUP_NAME'
-  AND NOT permission_id @> ARRAY(SELECT id FROM service_user.permission
-                                WHERE url = :'URL'
-                                AND server_name = :'SERVER_NAME');
+-- -- 通解：
+-- -- 定义变量
+--     \set PERMISSION_NAME '极运营/教务管理/班级/导出班级V2'
+--     \set SERVER_NAME 'service-education'
+--     \set URL '/education/classes/export'
+--     \set HTTP_METHOD 'POST'
+--     \set LEVEL 'loginAndAuth'
+--     \set PERMISSION_TYPE 'URL'
+--     \set CHECK_RECOMMIT 'f'
+--     \set GROUP_NAME '极运营/教务管理/班级/查看班级'
+--
+-- -- 插入新权限
+-- INSERT INTO "service_user"."permission" (
+--     "id", "name", "server_name", "url", "http_method",
+--     "create_time", "level", "front", "type", "remark",
+--     "check_recommit", "parent_id", "tree_level"
+-- )
+-- VALUES (
+--            nextval('service_user.permission_id_seq'),
+--            :'PERMISSION_NAME',
+--            :'SERVER_NAME',
+--            :'URL',
+--            :'HTTP_METHOD',
+--            now(),
+--            :'LEVEL',
+--            NULL,
+--            :'PERMISSION_TYPE',
+--            NULL,
+--            :'CHECK_RECOMMIT',
+--            NULL,
+--            NULL
+--        );
+--
+-- -- 更新权限组
+-- UPDATE service_user.permission_group
+-- SET permission_id = array_cat(
+--         permission_id,
+--         ARRAY(SELECT id FROM service_user.permission
+--           WHERE url = :'URL'
+--           AND server_name = :'SERVER_NAME')
+--                     )
+-- WHERE name = :'GROUP_NAME'
+--   AND NOT permission_id @> ARRAY(SELECT id FROM service_user.permission
+--                                 WHERE url = :'URL'
+--                                 AND server_name = :'SERVER_NAME');
 
 -- 纯sql：
 -- 定义变量
