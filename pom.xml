@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jiuaoedu</groupId>
+        <artifactId>jiuaoedu-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <groupId>com.jiuaoedu</groupId>
+    <artifactId>workScripts</artifactId>
+    <packaging>pom</packaging>
+    <version>7.7.7-SNAPSHOT</version>
+
+    <name>workScripts</name>
+
+    <properties>
+        <commons.version>1.0.0-SNAPSHOT</commons.version>
+        <contract-pay.version>7.7.7-SNAPSHOT</contract-pay.version>
+        <identity.version>7.7.7-SNAPSHOT</identity.version>
+        <contract-src.version>7.7.7-SNAPSHOT</contract-src.version>
+        <monitor-hook.version>7.7.7-SNAPSHOT</monitor-hook.version>
+        <contract-idea.version>7.7.7-SNAPSHOT</contract-idea.version>
+        <contract-user.version>7.7.7-SNAPSHOT</contract-user.version>
+        <contract-scrm.version>7.7.7-SNAPSHOT</contract-scrm.version>
+        <contract-science.version>7.7.7-SNAPSHOT</contract-science.version>
+        <contract-value-split.version>7.7.7-SNAPSHOT</contract-value-split.version>
+        <resource-public.version>7.7.7-SNAPSHOT</resource-public.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>discovery-spring-cloud-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>config-spring-cloud-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>3.17</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-scratchpad</artifactId>
+                <version>3.17</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:bean-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>bean-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:common-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>common-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:log-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>log-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>redis-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:mybatis-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>mybatis-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:qcloud-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>qcloud-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:token-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>token-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>resource-public</artifactId>
+                <version>${resource-public.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:web-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>web-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:swagger-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>swagger-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:threadpool-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>threadpool-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:json-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>json-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <!-- com.jiuaoedu:rocketmq-spring-boot-starter -->
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>rocketmq-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>contract-user</artifactId>
+                <version>${contract-user.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>fastjson</artifactId>
+                <version>1.2.49</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>easyexcel</artifactId>
+                <version>2.2.6</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>xxljob-spring-boot-starter</artifactId>
+                <version>${commons.version}</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>discovery-spring-cloud-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>config-spring-cloud-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>3.17</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>3.17</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:bean-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>bean-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:common-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>common-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:log-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>log-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:mybatis-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:qcloud-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>qcloud-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:token-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>token-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>resource-public</artifactId>
+            <version>${resource-public.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:web-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>web-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:threadpool-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>threadpool-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:json-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>json-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <!-- com.jiuaoedu:rocketmq-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>contract-user</artifactId>
+            <version>${contract-user.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>easyexcel</artifactId>
+            <version>2.2.6</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>xxljob-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>net.minidev</groupId>
+            <artifactId>accessors-smart</artifactId>
+            <version>2.4.9</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.ow2.asm</groupId>
+                    <artifactId>asm</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- com.jiuaoedu:swagger-spring-boot-starter -->
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>swagger-spring-boot-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>redis-spring-boot-starter</artifactId>
+            <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-collections4</artifactId>
+            <version>4.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-beanutils</groupId>
+            <artifactId>commons-beanutils</artifactId>
+            <version>1.9.3</version>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.6</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.liyiorg</groupId>
+            <artifactId>weixin-popular</artifactId>
+            <version>2.8.30</version>
+        </dependency>
+    </dependencies>
+
+    <distributionManagement>
+        <!-- ���ÿ��հ汾�����Ĳֿ�-->
+        <snapshotRepository>
+            <id>maven-snapshots</id>
+            <name>Nexus Snapshots Repository</name>
+            <url>http://118.24.71.244:8081/repository/maven-snapshots/</url>
+            <uniqueVersion>false</uniqueVersion>
+        </snapshotRepository>
+        <!-- ����release�汾�����Ĳֿ�-->
+        <repository>
+            <id>maven-releases</id>
+            <name>Nexus Releases Repository</name>
+            <url>http://118.24.71.244:8081/repository/maven-releases/</url>
+        </repository>
+    </distributionManagement>
+
+    <repositories>
+        <repository>
+            <id>maven-public</id>
+            <url>http://118.24.71.244:8081/repository/maven-public/</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <configuration>
+                    <useDefaultDelimiters>false</useDefaultDelimiters>
+                    <delimiters>
+                        <delimiter>$[*]</delimiter>
+                    </delimiters>
+                    <encoding>UTF-8</encoding>
+                    <resources>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <filtering>true</filtering>
+                            <includes>
+                                <include>bootstrap.yml</include>
+                            </includes>
+                        </resource>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <filtering>false</filtering>
+                            <includes>
+                                <include>**</include>
+                            </includes>
+                        </resource>
+                    </resources>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
