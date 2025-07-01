@@ -39,38 +39,38 @@ import java.util.function.Function;
  * <p>
  * **示例代码**：
  * ```java
- ** @RestController
- ** public class StudentExportController {
- **     @Resource
- **     private ExportTool exportTool;
- **     @Resource
- **     private StudentService studentService;
+ * * @RestController
+ * * public class StudentExportController {
+ * *     @Resource
+ * *     private ExportTool exportTool;
+ * *     @Resource
+ * *     private StudentService studentService;
  * <p>
- **     // 1. 定义查询方法（需返回Page<R>）
- **     public Page<Student> queryStudents(StudentQueryIn in) {
- **         return studentService.queryByPage(in);
- **     }
+ * *     // 1. 定义查询方法（需返回Page<R>）
+ * *     public Page<Student> queryStudents(StudentQueryIn in) {
+ * *         return studentService.queryByPage(in);
+ * *     }
  * <p>
- **     // 2. 定义转换方法（R转E，E为导出类型）
- **     public StudentExportVo convertToExportVo(Student student) {
- **         // 字段映射逻辑
- **         return new StudentExportVo();
- **     }
+ * *     // 2. 定义转换方法（R转E，E为导出类型）
+ * *     public StudentExportVo convertToExportVo(Student student) {
+ * *         // 字段映射逻辑
+ * *         return new StudentExportVo();
+ * *     }
  * <p>
- **     // 3. 创建导出处理器
- **     private final ExportTool.ExportHandler<StudentQueryIn> exportHandler =
- **         exportTool.createExportHandler(
- **             this::queryStudents,    // 查询方法引用
- **             this::convertToExportVo, // 转换方法引用
- **             "学生数据导出"           // 导出文件名
- **         );
+ * *     // 3. 创建导出处理器
+ * *     private final ExportTool.ExportHandler<StudentQueryIn> exportHandler =
+ * *         exportTool.createExportHandler(
+ * *             this::queryStudents,    // 查询方法引用
+ * *             this::convertToExportVo, // 转换方法引用
+ * *             "学生数据导出"           // 导出文件名
+ * *         );
  * <p>
- **     // 4. 控制器接口
- **     @PostMapping("/api/students/export")
- **     public Result<Long> export(@RequestBody StudentQueryIn in) {
- **         return exportHandler.handle(in);
- **     }
- ** }
+ * *     // 4. 控制器接口
+ * *     @PostMapping("/api/students/export")
+ * *     public Result<Long> export(@RequestBody StudentQueryIn in) {
+ * *         return exportHandler.handle(in);
+ * *     }
+ * * }
  * ```
  *
  * @author ZhangHaoRan
@@ -78,21 +78,22 @@ import java.util.function.Function;
  */
 public class ExportTool {
     private final TaskPool es = TaskPoolFactory.getTaskPool(
-        1, 2, 0, TimeUnit.SECONDS, 
-        new ArrayBlockingQueue<>(300), 
-        new ThreadPoolExecutor.AbortPolicy()
+            1, 2, 0, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(300),
+            new ThreadPoolExecutor.AbortPolicy()
     );
     private final Logger log = LoggerFactory.getLogger(ExportTool.class);
-    
+
     @Resource
     private ExportClient exportClient;
 
     /**
      * 创建导出处理器（自动推导导出类型）
-     * @param <I> 查询条件类型
-     * @param <R> 原始查询结果类型
-     * @param queryMethod 查询方法
-     * @param convertMethod 转换方法（隐含导出类型）
+     *
+     * @param <I>            查询条件类型
+     * @param <R>            原始查询结果类型
+     * @param queryMethod    查询方法
+     * @param convertMethod  转换方法（隐含导出类型）
      * @param exportFileName 导出文件名
      * @return 导出接口处理函数
      */
@@ -102,7 +103,7 @@ public class ExportTool {
             String exportFileName) {
         // 通过转换方法反射获取导出类型
         Class<E> exportClass = getExportClass(convertMethod);
-        
+
         return in -> {
             CreateTaskIn createTaskIn = new CreateTaskIn();
             createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
@@ -111,8 +112,8 @@ public class ExportTool {
             in.setPageNum(1);
             createTaskIn.setParams(JSON.toJSONString(in));
             Long taskId = exportClient.createExportTask(createTaskIn);
-            
-            es.submit(new ExecutorTask(){
+
+            es.submit(new ExecutorTask() {
                 @Override
                 public void execute() {
                     try {
@@ -123,22 +124,23 @@ public class ExportTool {
                         exportClient.failedExportTask(taskId, e.getMessage());
                     }
                 }
+
                 private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
                     Map<String, List<?>> datas = new HashMap<>(4);
                     datas.put("sheet1", dataList);
                     Map<String, Class<?>> models = new HashMap<>(4);
                     models.put("sheet1", modelClass);
-                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" +  UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
+                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
                 }
 
             });
-            
+
             return com.jiuaoedu.common.Result.success(taskId);
         };
     }
 
     public <I, R, E> ExportHandler<I> createExportHandlerNoPageProcess(
-            ExportQueryFunction2<I, R> queryMethod,
+            ExportQueryFunctionNoPageProcess<I, R> queryMethod,
             Function<R, E> convertMethod,
             String exportFileName) {
         // 通过转换方法反射获取导出类型
@@ -151,23 +153,24 @@ public class ExportTool {
             createTaskIn.setParams(JSON.toJSONString(in));
             Long taskId = exportClient.createExportTask(createTaskIn);
 
-            es.submit(new ExecutorTask(){
+            es.submit(new ExecutorTask() {
                 @Override
                 public void execute() {
                     try {
-                        List<E> exportData = fetchAndConvertData2(in, queryMethod, convertMethod);
+                        List<E> exportData = fetchAndConvertDataNoPageProcess(in, queryMethod, convertMethod);
                         exportSingleSheet(taskId, exportData, exportClass, exportFileName);
                     } catch (Exception e) {
                         log.error(exportFileName + "导出失败", e);
                         exportClient.failedExportTask(taskId, e.getMessage());
                     }
                 }
+
                 private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
                     Map<String, List<?>> datas = new HashMap<>(4);
                     datas.put("sheet1", dataList);
                     Map<String, Class<?>> models = new HashMap<>(4);
                     models.put("sheet1", modelClass);
-                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" +  UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
+                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
                 }
 
             });
@@ -210,7 +213,7 @@ public class ExportTool {
             throw new RuntimeException("导出类型推导失败，请检查转换方法的返回类型", e);
         }
     }
-    
+
     /**
      * 分页查询并转换数据
      */
@@ -218,45 +221,40 @@ public class ExportTool {
             I in,
             ExportQueryFunction<I, R> queryMethod,
             Function<R, E> convertMethod) {
-        
+
         int pageSize = 20000;
         int pageNum = 1;
         boolean hasNextPage = true;
         List<E> exportData = new ArrayList<>();
-        
+
         while (hasNextPage) {
             in.setPageSize(pageSize);
             in.setPageNum(pageNum);
             Page<R> pageResult = queryMethod.apply(in);
             List<R> results = pageResult.getList();
-            
+
             for (R result : results) {
                 exportData.add(convertMethod.apply(result));
             }
-            
+
             hasNextPage = pageResult.isHasNextPage();
             pageNum++;
         }
-        
+
         return exportData;
     }
 
     /**
      * 分页查询并转换数据
      */
-    private <I, R, E> List<E> fetchAndConvertData2(
-            I in,
-            ExportQueryFunction2<I, R> queryMethod,
-            Function<R, E> convertMethod) {
-
+    private <I, R, E> List<E> fetchAndConvertDataNoPageProcess(I in, ExportQueryFunctionNoPageProcess<I, R> queryMethod, Function<R, E> convertMethod) {
         List<E> exportData = new ArrayList<>();
 
-            List<R> results = queryMethod.apply(in);
+        List<R> results = queryMethod.apply(in);
 
-            for (R result : results) {
-                exportData.add(convertMethod.apply(result));
-            }
-
+        for (R result : results) {
+            exportData.add(convertMethod.apply(result));
+        }
         return exportData;
     }
 
@@ -267,6 +265,7 @@ public class ExportTool {
     public interface ExportHandler<I> {
         /**
          * 处理导出请求
+         *
          * @param in 查询条件（需实现PageIn接口）
          * @return 导出任务ID
          */
@@ -275,6 +274,7 @@ public class ExportTool {
 
     /**
      * 导出查询函数：接收查询条件和分页参数，返回分页结果
+     *
      * @param <I> 查询条件类型，需实现PageIn接口
      * @param <R> 原始查询结果类型
      */
@@ -282,6 +282,7 @@ public class ExportTool {
     public interface ExportQueryFunction<I extends PageIn, R> {
         /**
          * 执行分页查询
+         *
          * @param in 查询条件
          * @return 分页查询结果
          */
@@ -290,15 +291,17 @@ public class ExportTool {
 
     /**
      * 导出查询函数：接收查询条件和分页参数，返回分页结果
-     * @param <I> 查询条件类型，需实现PageIn接口
+     *
+     * @param <I> 查询条件类型，无需实现PageIn接口
      * @param <R> 原始查询结果类型
      */
     @FunctionalInterface
-    public interface ExportQueryFunction2<I, R> {
+    public interface ExportQueryFunctionNoPageProcess<I, R> {
         /**
-         * 执行分页查询
+         * 执行列表查询
+         *
          * @param in 查询条件
-         * @return 分页查询结果
+         * @return 列表查询结果
          */
         List<R> apply(I in);
     }
