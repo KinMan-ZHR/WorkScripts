@@ -23,6 +23,7 @@
         <monitor-hook.version>7.7.7-SNAPSHOT</monitor-hook.version>
         <contract-idea.version>7.7.7-SNAPSHOT</contract-idea.version>
         <contract-user.version>7.7.7-SNAPSHOT</contract-user.version>
+        <contract-education.version>7.7.7-SNAPSHOT</contract-education.version>
         <contract-scrm.version>7.7.7-SNAPSHOT</contract-scrm.version>
         <contract-science.version>7.7.7-SNAPSHOT</contract-science.version>
         <contract-value-split.version>7.7.7-SNAPSHOT</contract-value-split.version>
@@ -151,6 +152,12 @@
             </dependency>
 
             <dependency>
+                <groupId>com.jiuaoedu</groupId>
+                <artifactId>contract-education</artifactId>
+                <version>${contract-education.version}</version>
+            </dependency>
+
+            <dependency>
                 <groupId>com.alibaba</groupId>
                 <artifactId>fastjson</artifactId>
                 <version>1.2.49</version>
@@ -242,6 +249,12 @@
             <groupId>com.jiuaoedu</groupId>
             <artifactId>token-spring-boot-starter</artifactId>
             <version>${commons.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.jiuaoedu</groupId>
+            <artifactId>contract-education</artifactId>
+            <version>${contract-education.version}</version>
         </dependency>
 
         <dependency>

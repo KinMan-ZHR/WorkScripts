@@ -1,4 +1,4 @@
-package 导出;
+package 导出.controller版;
 
 import com.alibaba.fastjson.JSON;
 import com.jiuaoedu.common.Page;
@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import 导出.PageIn;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
