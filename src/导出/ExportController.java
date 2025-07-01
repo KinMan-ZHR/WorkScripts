@@ -77,7 +77,6 @@ public abstract class ExportController <I extends PageIn, R, E> {
     @PostMapping(consumes = "application/json")
     public abstract com.jiuaoedu.common.Result<Long> export(@RequestBody @Validated I in);
 
-
     /**
      * 获取导出文件的名称
      * @return 导出文件名称
