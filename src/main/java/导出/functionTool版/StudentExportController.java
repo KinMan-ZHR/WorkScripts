@@ -1,4 +1,4 @@
-package 导出.高级版;
+package 导出.functionTool版;
 
 import com.jiuaoedu.common.Result;
 import com.jiuaoedu.contract.edu.education.api.IClassApi;

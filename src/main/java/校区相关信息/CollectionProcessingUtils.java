@@ -1,4 +1,4 @@
-package 数组分片;
+package 校区相关信息;
 
 import java.util.ArrayList;
 import java.util.Collection;
