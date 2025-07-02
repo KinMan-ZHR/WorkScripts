@@ -4,14 +4,19 @@ import com.jiuaoedu.common.Page;
 import com.jiuaoedu.contract.edu.servicepublic.pojo.PageIn;
 import com.jiuaoedu.contract.edu.servicepublic.pojo.exporttask.CreateTaskIn;
 import com.jiuaoedu.servicepublic.export.service.ExportClient;
+import com.jiuaoedu.threadpool.ExecutorTask;
 import com.jiuaoedu.threadpool.TaskPool;
+import com.jiuaoedu.web.util.RequestContextHolderUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -19,6 +24,7 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class ExportToolTest {
 
     @InjectMocks
@@ -31,26 +37,19 @@ class ExportToolTest {
     private Logger log;
 
     @Mock
-    private TaskPool taskPool;
+    private TaskPool es;
+
+    @Captor
+    private ArgumentCaptor<ExecutorTask> taskCaptor;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this); // 必须加这一行
-
-        // 替换线程池为同步执行器以便测试
-        ThreadPoolExecutor syncExecutor = new ThreadPoolExecutor(
-                1, 1, 0, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(1),
-                new ThreadPoolExecutor.CallerRunsPolicy()
-        );
-        TaskPool syncTaskPool = new TaskPool(syncExecutor);
-
-        exportTool = new ExportTool( exportClient,syncTaskPool,log);
+        exportTool = new ExportTool( exportClient, es,log);
     }
 
 
     @Test
-    void testGetExportClassFromGenericInterface() throws Exception {
+    void testGetExportClassFromGenericInterface() {
         Function<String, Integer> func = Integer::valueOf;
         Class<Integer> exportClass = exportTool.getExportClass(func);
         assertEquals(Integer.class, exportClass);
@@ -111,44 +110,85 @@ class ExportToolTest {
 
     @Test
     void testCreateExportHandler_Success() {
+        // 1. 模拟查询方法（返回可转换的数据）
         ExportTool.ExportQueryFunction<MockPageIn, String> queryFunc = in -> {
             Page<String> page = new Page<>();
-            page.setList(Collections.singletonList("test"));
+            page.setList(Collections.singletonList("123")); // 确保可转换为Integer
             page.setHasNextPage(false);
             return page;
         };
-        Function<String, Integer> convertFunc = Integer::parseInt;
 
-//        when(RequestContextHolderUtils.getEmployeeId()).thenReturn(123L);
-        when(exportClient.createExportTask(any(CreateTaskIn.class))).thenReturn(999L);
+        // 2. 模拟转换方法（无异常）
+        Function<String, Integer> convertFunc = s -> {
+            try {
+                return Integer.parseInt(s);
+            } catch (Exception e) {
+                fail("转换方法不应抛出异常");
+                return null;
+            }
+        };
 
-        ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(queryFunc, convertFunc, "测试导出");
+        try (MockedStatic<RequestContextHolderUtils> mocked = mockStatic(RequestContextHolderUtils.class)) {
+            // 3. 模拟静态方法和任务ID
+            mocked.when(RequestContextHolderUtils::getEmployeeId).thenReturn(123L);
+            when(exportClient.createExportTask(any(CreateTaskIn.class))).thenReturn(999L);
 
-        MockPageIn in = new MockPageIn();
-        com.jiuaoedu.common.Result<Long> result = handler.handle(in);
+            // 4. 拦截TaskPool的submit方法，手动执行任务
+            doAnswer(invocation -> {
+                ExecutorTask task = invocation.getArgument(0); // 获取提交的任务
+                task.execute(); // 立即执行任务（关键：触发exportFileWithMultipleSheet）
+                return null;
+            }).when(es).submit(any(ExecutorTask.class));
 
-        assertNotNull(result.getData());
-        verify(exportClient).createExportTask(any(CreateTaskIn.class));
-        verify(exportClient).exportFileWithMultipleSheet(anyMap(), anyMap(), anyString(), eq(999L));
+            // 5. 创建处理器并执行
+            ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(
+                    queryFunc, convertFunc, Integer.class, "测试导出"
+            );
+            MockPageIn in = new MockPageIn();
+            com.jiuaoedu.common.Result<Long> result = handler.handle(in);
+
+            // 6. 验证结果
+            assertNotNull(result.getData());
+            assertEquals(999L, result.getData().longValue());
+            verify(exportClient).createExportTask(any(CreateTaskIn.class));
+            verify(exportClient, never()).failedExportTask(anyLong(), anyString());
+            // 验证导出方法被调用
+            verify(exportClient).exportFileWithMultipleSheet(
+                    anyMap(), anyMap(), anyString(), eq(999L)
+            );
+        }
     }
 
     @Test
     void testCreateExportHandler_ExceptionHandling() {
+        // 模拟查询方法抛出异常
         ExportTool.ExportQueryFunction<MockPageIn, String> queryFunc = in -> {
-            throw new RuntimeException("模拟异常");
+            throw new RuntimeException("模拟查询异常");
         };
         Function<String, Integer> convertFunc = Integer::parseInt;
 
-//        when(RequestContextHolderUtils.getEmployeeId()).thenReturn(123L);
-        when(exportClient.createExportTask(any(CreateTaskIn.class))).thenReturn(999L);
+        try (MockedStatic<RequestContextHolderUtils> mocked = mockStatic(RequestContextHolderUtils.class)) {
+            mocked.when(RequestContextHolderUtils::getEmployeeId).thenReturn(123L);
+            when(exportClient.createExportTask(any(CreateTaskIn.class))).thenReturn(999L);
 
-        ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(queryFunc, convertFunc, "测试导出");
+            // 拦截submit并执行任务（触发异常处理）
+            doAnswer(invocation -> {
+                ExecutorTask task = invocation.getArgument(0);
+                task.execute();
+                return null;
+            }).when(es).submit(any(ExecutorTask.class));
 
-        MockPageIn in = new MockPageIn();
-        com.jiuaoedu.common.Result<Long> result = handler.handle(in);
+            // 执行测试
+            ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(
+                    queryFunc, convertFunc, Integer.class, "测试导出"
+            );
+            MockPageIn in = new MockPageIn();
+            com.jiuaoedu.common.Result<Long> result = handler.handle(in);
 
-        assertNotNull(result.getData());
-        verify(exportClient).failedExportTask(eq(999L), contains("模拟异常"));
+            // 验证异常处理
+            verify(exportClient).failedExportTask(eq(999L), contains("模拟查询异常"));
+        }
+
     }
 
     // Helper class for testing

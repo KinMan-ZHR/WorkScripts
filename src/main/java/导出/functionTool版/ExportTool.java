@@ -103,12 +103,39 @@ public class ExportTool {
             ExportQueryFunction<I, R> queryMethod,
             Function<R, E> convertMethod,
             String exportFileName) {
-        // 通过转换方法反射获取导出类型
-        Class<E> exportClass = getExportClass(convertMethod);
+            Class<E> exportClass = getExportClass(convertMethod);
+            return createExportHandler(queryMethod, convertMethod, exportClass, exportFileName);
+    }
 
+    /**
+     * 自定义异常类，用于类型推导失败的场景
+     */
+    public static class ExportTypeInferenceException extends RuntimeException {
+        public ExportTypeInferenceException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * 创建导出处理器（显式指定导出类型）
+     *
+     * @param <I>            查询条件类型
+     * @param <R>            原始查询结果类型
+     * @param <E>            导出数据类型
+     * @param queryMethod    查询方法
+     * @param convertMethod  转换方法
+     * @param exportClass    导出数据类型的 Class 对象
+     * @param exportFileName 导出文件名
+     * @return 导出接口处理函数
+     */
+    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
+            ExportQueryFunction<I, R> queryMethod,
+            Function<R, E> convertMethod,
+            Class<E> exportClass,
+            String exportFileName) {
         return in -> {
             CreateTaskIn createTaskIn = new CreateTaskIn();
-//            createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
+            createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
             createTaskIn.setFileNme(exportFileName);
             in.setPageSize(Integer.MAX_VALUE);
             in.setPageNum(1);
@@ -134,7 +161,6 @@ public class ExportTool {
                     models.put("sheet1", modelClass);
                     exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
                 }
-
             });
 
             return com.jiuaoedu.common.Result.success(taskId);
@@ -206,14 +232,37 @@ public class ExportTool {
                 }
             }
 
-            // 备用方案：通过apply方法获取返回类型
-            Method applyMethod = functionClass.getMethod("apply", Object.class);
-            return (Class<E>) applyMethod.getReturnType();
-        } catch (Exception e) {
-            log.error("获取导出类型失败，转换方法: {}",
-                    convertMethod.getClass().getName(), e);
-            throw new RuntimeException("导出类型推导失败，请检查转换方法的返回类型", e);
+            // 方案2：通过带有类型令牌的辅助方法（适用于 Lambda/方法引用）
+            // 注意：这种方式需要用户显式传递 Class<E>，但能确保正确性
+            // 2. 类型推导失败（业务层面的预期异常）
+            String inferenceErrorMsg = "无法自动推导导出类型。转换方法：" + convertMethod.getClass().getName() + " 因Lambda/方法引用的泛型擦除。请使用重载方法并显式指定导出类型：createExportHandler(queryMethod, convertMethod, ExportType.class, exportFileName)";
+            throw new ExportTypeInferenceException(inferenceErrorMsg);
+        } catch (SecurityException e) {
+            // 3. 反射权限异常（不可处理，需带上下文重抛）
+            String contextMsg = "反射获取导出类型时无权限（转换方法：" + convertMethod.getClass().getName() + "）";
+            log.error(contextMsg, e); // 记录详细日志
+            throw new SecurityException(contextMsg, e); // 添加上下文后重抛
+
+        } catch (NoClassDefFoundError e) {
+            // 4. 类加载异常（不可处理，需带上下文重抛）
+            String contextMsg = "转换方法依赖的类未找到（转换方法：" + convertMethod.getClass().getName() + "）";
+            log.error(contextMsg, e); // 记录详细日志
+            throw new NoClassDefFoundError(contextMsg); // 保留原始异常类型，添加上下文
         }
+    }
+
+    /**
+     * 查找 Function 接口的 apply 方法（处理 Lambda 生成的桥接方法）
+     */
+    private Method findApplyMethod(Class<?> functionClass) throws NoSuchMethodException {
+        // 遍历所有方法，找到参数类型为 R 的 apply 方法
+        for (Method method : functionClass.getMethods()) {
+            if ("apply".equals(method.getName()) && method.getParameterCount() == 1) {
+                // Function 接口的 apply 方法参数类型为 R，返回类型为 E
+                return method;
+            }
+        }
+        throw new NoSuchMethodException("未找到 apply 方法");
     }
 
     /**
