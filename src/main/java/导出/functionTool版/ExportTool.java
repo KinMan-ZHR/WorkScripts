@@ -7,14 +7,11 @@ import com.jiuaoedu.contract.edu.servicepublic.pojo.exporttask.CreateTaskIn;
 import com.jiuaoedu.servicepublic.export.service.ExportClient;
 import com.jiuaoedu.threadpool.ExecutorTask;
 import com.jiuaoedu.threadpool.TaskPool;
-import com.jiuaoedu.threadpool.TaskPoolFactory;
 import com.jiuaoedu.web.util.RequestContextHolderUtils;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestBody;
 
-import javax.annotation.Resource;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -23,9 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /**
