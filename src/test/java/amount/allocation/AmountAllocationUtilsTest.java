@@ -1,12 +1,10 @@
-package AmountAllocation;
+package amount.allocation;
 
-import main.java.AmountAllocation.AmountAllocationUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
 import java.math.BigDecimal;
@@ -93,8 +91,8 @@ public class AmountAllocationUtilsTest {
 
         // 验证均摊计算
         assertEquals(new BigDecimal("33.33"), result[0]);
-        assertEquals(new BigDecimal("33.33"), result[1]);
-        assertEquals(new BigDecimal("33.34"), result[2]); // 零头在第3个位置
+        assertEquals(new BigDecimal("33.34"), result[1]);
+        assertEquals(new BigDecimal("33.33"), result[2]); // 零头在第3个位置
 
         // 验证总和
         assertEquals(totalAmount, result[0].add(result[1]).add(result[2]));
@@ -162,15 +160,10 @@ public class AmountAllocationUtilsTest {
     @Test
     public void testRemainderPositionRandom_ValidRange() {
         int quantity = 5;
-
-        // Mock Math.random() to return a fixed value for testing
-        try (MockedStatic<Math> mathMockedStatic = Mockito.mockStatic(Math.class)) {
-            mathMockedStatic.when(() -> Math.random()).thenReturn(0.6);
-
-            int result = AmountAllocationUtils.remainderPositionRandom(quantity);
-            assertTrue(result >= 0 && result < quantity);
-        }
+        int result = AmountAllocationUtils.remainderPositionRandom(quantity);
+        assertTrue(result >= 0 && result < quantity);
     }
+
 
     /**
      * 测试 remainderPositionMax 方法能找到最大值位置

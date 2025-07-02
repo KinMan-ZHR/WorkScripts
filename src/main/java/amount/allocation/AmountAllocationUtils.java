@@ -1,8 +1,9 @@
-package main.java.AmountAllocation;
+package amount.allocation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.function.BiFunction;
 
 /**
@@ -103,7 +104,7 @@ public class AmountAllocationUtils {
      * @return 随机位置（0~n-1）
      */
     public static int remainderPositionRandom(int quantity) {
-        return (int) (Math.random() * quantity);
+        return new Random().nextInt(quantity);
     }
 
     /**

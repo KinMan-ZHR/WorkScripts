@@ -77,15 +77,23 @@ import java.util.function.Function;
  * @since 2025/7/1
  */
 public class ExportTool {
-    private final TaskPool es = TaskPoolFactory.getTaskPool(
-            1, 2, 0, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(300),
-            new ThreadPoolExecutor.AbortPolicy()
-    );
-    private final Logger log = LoggerFactory.getLogger(ExportTool.class);
+    private final ExportClient exportClient;
+    private final TaskPool es;
+    private final Logger log;
+    /**
+     * 创建导出处理工具
+     * @param exportClient 导出客户端
+     * @param es             线程池
+     *           private final TaskPool es = TaskPoolFactory.getTaskPool(1, 2, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(300), new ThreadPoolExecutor.AbortPolicy());
+     * @param log             日志记录器
+     *
+     */
 
-    @Resource
-    private ExportClient exportClient;
+    public ExportTool(ExportClient exportClient, TaskPool es, Logger log) {
+        this.exportClient = exportClient;
+        this.es = es;
+        this.log = log;
+    }
 
     /**
      * 创建导出处理器（自动推导导出类型）
@@ -106,7 +114,7 @@ public class ExportTool {
 
         return in -> {
             CreateTaskIn createTaskIn = new CreateTaskIn();
-            createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
+//            createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
             createTaskIn.setFileNme(exportFileName);
             in.setPageSize(Integer.MAX_VALUE);
             in.setPageNum(1);
@@ -183,7 +191,7 @@ public class ExportTool {
      * 通过转换方法反射获取导出类型
      */
     @SuppressWarnings("unchecked")
-    private <R, E> Class<E> getExportClass(Function<R, E> convertMethod) {
+    <R, E> Class<E> getExportClass(Function<R, E> convertMethod) {
         try {
             // 获取函数式接口的实现类
             Class<?> functionClass = convertMethod.getClass();
@@ -217,7 +225,7 @@ public class ExportTool {
     /**
      * 分页查询并转换数据
      */
-    private <I extends PageIn, R, E> List<E> fetchAndConvertData(
+    <I extends PageIn, R, E> List<E> fetchAndConvertData(
             I in,
             ExportQueryFunction<I, R> queryMethod,
             Function<R, E> convertMethod) {
