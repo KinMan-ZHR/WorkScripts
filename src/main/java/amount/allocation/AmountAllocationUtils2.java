@@ -34,7 +34,7 @@ import java.util.function.BiFunction;
  *     quantity,
  *     AmountAllocationUtils.weightedAllocation(weights, randomPosition)
  * );
- * // 可能的结果：[30.00, 30.00, 40.01]
+ * // 可能的结果：[30.00, 30.00, 40.00]
  *
  * // 示例3：自定义分摊算法（阶梯式分摊）
  * BiFunction<BigDecimal, Integer, BigDecimal[]> customStrategy = (totalAmt, qty) -> {
@@ -52,7 +52,7 @@ import java.util.function.BiFunction;
  *   <li>零头位置索引从0开始，范围为 0 到 n-1</li>
  * </ul>
  */
-public class AmountAllocationUtils {
+public class AmountAllocationUtils2 {
 
     /**
      * 分摊金额的主方法，根据指定的分摊策略将总金额分配到多个部分。
@@ -79,7 +79,7 @@ public class AmountAllocationUtils {
     /**
      * 均摊算法，将总金额平均分配到每个部分，并将余数放到指定位置。
      * <p>
-     * 例如：将 100.01 元均摊到 3 个部分，余数 0.01 放在位置 1，结果为 [33.33, 33.34, 33.33]。
+     * 例如：将 100.00 元均摊到 3 个部分，余数 0.01 放在位置 1，结果为 [33.33, 33.34, 33.33]。
      * </p>
      *
      * @param remainderPosition 零头位置策略，指定余数放置的位置（0~n-1）

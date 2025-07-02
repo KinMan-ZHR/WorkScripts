@@ -13,7 +13,7 @@ import java.util.function.BiFunction;
 import static org.junit.Assert.*;
 
 @RunWith(MockitoJUnitRunner.class)
-public class AmountAllocationUtilsTest {
+public class AmountAllocationUtils2Test {
 
     private MockedStatic<Math> mockedMath;
 
@@ -40,9 +40,9 @@ public class AmountAllocationUtilsTest {
      */
     @Test
     public void testAllocate_NormalCase() {
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.evenAllocation(0);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.evenAllocation(0);
 
-        BigDecimal[] result = AmountAllocationUtils.allocate(totalAmount, quantity, strategy);
+        BigDecimal[] result = AmountAllocationUtils2.allocate(totalAmount, quantity, strategy);
 
         assertNotNull(result);
         assertEquals(quantity, result.length);
@@ -54,8 +54,8 @@ public class AmountAllocationUtilsTest {
      */
     @Test(expected = IllegalArgumentException.class)
     public void testAllocate_NegativeTotalAmount() {
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.evenAllocation(0);
-        AmountAllocationUtils.allocate(new BigDecimal("-100.00"), 3, strategy);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.evenAllocation(0);
+        AmountAllocationUtils2.allocate(new BigDecimal("-100.00"), 3, strategy);
     }
 
     /**
@@ -63,8 +63,8 @@ public class AmountAllocationUtilsTest {
      */
     @Test(expected = IllegalArgumentException.class)
     public void testAllocate_NullTotalAmount() {
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.evenAllocation(0);
-        AmountAllocationUtils.allocate(null, 3, strategy);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.evenAllocation(0);
+        AmountAllocationUtils2.allocate(null, 3, strategy);
     }
 
     /**
@@ -72,8 +72,8 @@ public class AmountAllocationUtilsTest {
      */
     @Test(expected = IllegalArgumentException.class)
     public void testAllocate_InvalidQuantity() {
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.evenAllocation(0);
-        AmountAllocationUtils.allocate(new BigDecimal("100.00"), 0, strategy);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.evenAllocation(0);
+        AmountAllocationUtils2.allocate(new BigDecimal("100.00"), 0, strategy);
     }
 
     /**
@@ -82,7 +82,7 @@ public class AmountAllocationUtilsTest {
     @Test
     public void testEvenAllocation_StrategyLogic() {
         int remainderPosition = 1;
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.evenAllocation(remainderPosition);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.evenAllocation(remainderPosition);
 
         BigDecimal[] result = strategy.apply(totalAmount, quantity);
 
@@ -110,7 +110,7 @@ public class AmountAllocationUtilsTest {
         };
         int remainderPosition = 1;
 
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.weightedAllocation(weights, remainderPosition);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.weightedAllocation(weights, remainderPosition);
 
         BigDecimal[] result = strategy.apply(totalAmount, quantity);
 
@@ -126,7 +126,7 @@ public class AmountAllocationUtilsTest {
      */
     @Test(expected = IllegalArgumentException.class)
     public void testWeightedAllocation_NullWeights() {
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.weightedAllocation(null, 0);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.weightedAllocation(null, 0);
         strategy.apply(new BigDecimal("100.00"), 3);
     }
 
@@ -136,7 +136,7 @@ public class AmountAllocationUtilsTest {
     @Test(expected = IllegalArgumentException.class)
     public void testWeightedAllocation_InvalidWeightsLength() {
         BigDecimal[] weights = {new BigDecimal("1"), new BigDecimal("2")};
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.weightedAllocation(weights, 0);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.weightedAllocation(weights, 0);
         strategy.apply(new BigDecimal("100.00"), 3);
     }
 
@@ -150,7 +150,7 @@ public class AmountAllocationUtilsTest {
                 new BigDecimal("0"),
                 new BigDecimal("0")
         };
-        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils.weightedAllocation(weights, 0);
+        BiFunction<BigDecimal, Integer, BigDecimal[]> strategy = AmountAllocationUtils2.weightedAllocation(weights, 0);
         strategy.apply(new BigDecimal("100.00"), 3);
     }
 
@@ -160,7 +160,7 @@ public class AmountAllocationUtilsTest {
     @Test
     public void testRemainderPositionRandom_ValidRange() {
         int quantity = 5;
-        int result = AmountAllocationUtils.remainderPositionRandom(quantity);
+        int result = AmountAllocationUtils2.remainderPositionRandom(quantity);
         assertTrue(result >= 0 && result < quantity);
     }
 
@@ -176,7 +176,7 @@ public class AmountAllocationUtilsTest {
                 new BigDecimal("15.00")
         };
 
-        int result = AmountAllocationUtils.remainderPositionMax(amounts);
+        int result = AmountAllocationUtils2.remainderPositionMax(amounts);
         assertEquals(1, result); // 最大值在索引1
     }
 
@@ -191,7 +191,7 @@ public class AmountAllocationUtilsTest {
                 new BigDecimal("10.00")
         };
 
-        int result = AmountAllocationUtils.remainderPositionMax(amounts);
+        int result = AmountAllocationUtils2.remainderPositionMax(amounts);
         assertEquals(0, result); // 所有相等时返回第一个位置
     }
 
@@ -206,7 +206,7 @@ public class AmountAllocationUtilsTest {
                 new BigDecimal("5.00")
         };
 
-        int result = AmountAllocationUtils.remainderPositionMin(amounts);
+        int result = AmountAllocationUtils2.remainderPositionMin(amounts);
         assertEquals(2, result); // 最小值在索引2
     }
 
@@ -221,7 +221,7 @@ public class AmountAllocationUtilsTest {
                 new BigDecimal("10.00")
         };
 
-        int result = AmountAllocationUtils.remainderPositionMin(amounts);
+        int result = AmountAllocationUtils2.remainderPositionMin(amounts);
         assertEquals(0, result); // 所有相等时返回第一个位置
     }
 }
