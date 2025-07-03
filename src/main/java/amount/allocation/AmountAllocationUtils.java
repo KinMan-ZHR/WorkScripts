@@ -67,7 +67,7 @@ public class AmountAllocationUtils {
         BigDecimal resultSum = Arrays.stream(result).reduce(BigDecimal.ZERO, BigDecimal::add);
         if (resultSum.compareTo(totalAmount) != 0) {
             throw new IllegalStateException(
-                    String.format("分摊结果总和不正确：预期 %s，实际 %s",
+                    String.format("分摊结果总和不正确：预期 %s，实际 %s 请检查零头策略是否合理",
                             totalAmount.toPlainString(),
                             resultSum.toPlainString())
             );
@@ -126,7 +126,7 @@ public class AmountAllocationUtils {
             int scale = getScale(precision);
 
             for (int i = 0; i < quantity; i++) {
-                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.DOWN);
+                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.HALF_UP);
                 BigDecimal amount = totalAmount.multiply(weightRatio);
                 baseAmounts[i] = amount.setScale(scale, RoundingMode.DOWN);
             }
@@ -231,7 +231,7 @@ public class AmountAllocationUtils {
         int units = totalRemainder.divide(precision, 0, RoundingMode.DOWN).intValue();
 
         // 正数：加
-        if (units > 0) {
+        while (units > 0) {
             for (int pos : positions) {
                 if (units == 0) break;
                 result[pos] = result[pos].add(precision);
@@ -239,7 +239,7 @@ public class AmountAllocationUtils {
             }
         }
         // 负数：减
-        else if (units < 0) {
+        while (units < 0) {
             units = -units;  // 取绝对值
             for (int pos : positions) {
                 if (units == 0) break;
@@ -338,5 +338,75 @@ public class AmountAllocationUtils {
         public BigDecimal getAmount() {
             return amount;
         }
+    }
+
+    /**
+     * 加权零头分配策略：按权重比例分配零头
+     * <p>
+     * 算法说明：
+     * 1. 计算每个位置的权重占比
+     * 2. 根据权重占比分配零头（向下取整到精度）
+     * 3. 处理剩余零头：将剩余零头按顺序逐个分配
+     */
+    public static RemainderStrategy weightedRemainder(BigDecimal[] weights) {
+        if (weights == null) {
+            throw new IllegalArgumentException("权重数组不能为空");
+        }
+
+        return (baseAmounts, totalRemainder, precision) -> {
+            if (totalRemainder.compareTo(BigDecimal.ZERO) <= 0) {
+                return baseAmounts;
+            }
+
+            int quantity = baseAmounts.length;
+            if (weights.length != quantity) {
+                throw new IllegalArgumentException("权重数组长度与分摊数量不一致");
+            }
+
+            // 计算总权重
+            BigDecimal totalWeight = Arrays.stream(weights).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("总权重必须大于0");
+            }
+
+            // 创建结果数组
+            BigDecimal[] result = Arrays.copyOf(baseAmounts, quantity);
+            int scale = getScale(precision);
+
+            // 按权重比例分配零头
+            BigDecimal[] remainderParts = new BigDecimal[quantity];
+            BigDecimal allocatedRemainder = BigDecimal.ZERO;
+
+            for (int i = 0; i < quantity; i++) {
+                // 计算该位置应分配的零头
+                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.HALF_UP);
+                BigDecimal remainderPart = totalRemainder.multiply(weightRatio);
+
+                // 向下取整到精度
+                remainderParts[i] = remainderPart.setScale(scale, RoundingMode.DOWN);
+                allocatedRemainder = allocatedRemainder.add(remainderParts[i]);
+            }
+
+            // 计算剩余未分配的零头
+            BigDecimal remainingRemainder = totalRemainder.subtract(allocatedRemainder);
+            int remainingUnits = remainingRemainder.divide(precision, 0, RoundingMode.DOWN).intValue();
+
+            // 按顺序分配剩余零头单位
+            if (remainingUnits > 0) {
+                int[] positions = IntStream.range(0, quantity).toArray();
+                for (int pos : positions) {
+                    if (remainingUnits <= 0) break;
+                    result[pos] = result[pos].add(precision);
+                    remainingUnits--;
+                }
+            }
+
+            // 应用零头分配结果
+            for (int i = 0; i < quantity; i++) {
+                result[i] = result[i].add(remainderParts[i]);
+            }
+
+            return result;
+        };
     }
 }
