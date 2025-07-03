@@ -2,92 +2,114 @@ package amount.allocation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
- * 终极版金额分摊工具类
- * 核心功能：通过单一分摊算法统一生成基础金额和零头调整，返回最终分摊结果
+ * 金额分摊工具类
+ *
+ * 用于将总金额按指定规则分摊到多个位置，支持自定义分摊算法、零头处理策略和分配精度。
+ * 核心设计理念：将基础分摊算法与零头调整策略完全解耦，提高代码可维护性和扩展性。
  */
 public class AmountAllocationUtils {
 
+    /** 默认分配精度：0.01元 */
+    public static final BigDecimal DEFAULT_PRECISION = new BigDecimal("0.01");
+
     /**
-     * 核心分摊方法：通过单一算法生成基础金额和零头调整，并返回最终结果
-     *
-     * @param totalAmount 待分摊总金额（必须≥0）
-     * @param allocator   分摊算法（输入总金额和数量，返回完整的分摊结果）
-     * @return 一维数组：每个位置的最终分摊金额
+     * 核心分摊方法：结合基础分摊算法和零头调整策略，使用默认精度
      */
     public static BigDecimal[] allocate(
             BigDecimal totalAmount,
-            Allocator allocator
+            int quantity,
+            BaseAllocator baseAllocator,
+            RemainderStrategy remainderStrategy
+    ) {
+        return allocate(totalAmount, quantity, baseAllocator, remainderStrategy, DEFAULT_PRECISION);
+    }
+
+    /**
+     * 核心分摊方法：结合基础分摊算法、零头调整策略和指定精度
+     */
+    public static BigDecimal[] allocate(
+            BigDecimal totalAmount,
+            int quantity,
+            BaseAllocator baseAllocator,
+            RemainderStrategy remainderStrategy,
+            BigDecimal precision
     ) {
         // 参数校验
         if (totalAmount == null || totalAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("总金额必须≥0");
         }
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("分摊数量必须≥1");
+        }
+        if (precision == null || precision.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("精度必须>0");
+        }
 
-        // 执行分摊算法
-        return allocator.allocate(totalAmount);
+        // 执行基础分摊
+        BigDecimal[] baseAmounts = baseAllocator.allocate(totalAmount, quantity, precision);
+
+        // 计算零头（确保为正）
+        BigDecimal baseSum = Arrays.stream(baseAmounts).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalRemainder = totalAmount.subtract(baseSum);
+
+        // 应用零头策略
+        BigDecimal[] result = remainderStrategy.apply(baseAmounts, totalRemainder, precision);
+
+        // 验证结果总和是否等于总金额
+        BigDecimal resultSum = Arrays.stream(result).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (resultSum.compareTo(totalAmount) != 0) {
+            throw new IllegalStateException(
+                    String.format("分摊结果总和不正确：预期 %s，实际 %s",
+                            totalAmount.toPlainString(),
+                            resultSum.toPlainString())
+            );
+        }
+
+        return result;
     }
 
-    // ------------------------------ 分摊算法接口 ------------------------------
+    // ------------------------------ 基础分摊接口 ------------------------------
 
     /**
-     * 分摊算法接口：定义如何将总金额分配到多个位置
+     * 基础分摊算法接口
      */
     @FunctionalInterface
-    public interface Allocator {
+    public interface BaseAllocator {
         /**
-         * 执行金额分摊
-         * @param totalAmount 总金额
-         * @return 分摊结果数组（必须确保总和等于总金额）
+         * 执行基础金额分摊
          */
-        BigDecimal[] allocate(BigDecimal totalAmount);
+        BigDecimal[] allocate(BigDecimal totalAmount, int quantity, BigDecimal precision);
     }
 
-    // ------------------------------ 内置分摊算法 ------------------------------
+    // ------------------------------ 内置基础分摊算法 ------------------------------
 
     /**
-     * 均摊算法：平均分配金额，零头按指定策略处理
-     *
-     * @param quantity 分摊数量
-     * @param remainderStrategy 零头处理策略
+     * 均摊基础算法：将总金额平均分配到每个位置
      */
-    public static Allocator evenAllocator(int quantity, RemainderStrategy remainderStrategy) {
-        return totalAmount -> {
-            if (quantity <= 0) {
-                throw new IllegalArgumentException("分摊数量必须≥1");
-            }
+    public static BaseAllocator evenAllocator() {
+        return (totalAmount, quantity, precision) -> {
+            // 计算基础金额（向下取整到指定精度）
+            BigDecimal baseAmount = totalAmount.divide(BigDecimal.valueOf(quantity),
+                    getScale(precision), RoundingMode.DOWN);
 
-            // 计算基础金额（向下取整）
-            BigDecimal baseAmount = totalAmount.divide(BigDecimal.valueOf(quantity), 2, RoundingMode.DOWN);
-            BigDecimal[] result = new BigDecimal[quantity];
-            Arrays.fill(result, baseAmount);
-
-            // 计算总零头
-            BigDecimal totalRemainder = totalAmount.subtract(baseAmount.multiply(BigDecimal.valueOf(quantity)));
-            
-            // 应用零头策略
-            return remainderStrategy.apply(result, totalRemainder);
+            BigDecimal[] baseAmounts = new BigDecimal[quantity];
+            Arrays.fill(baseAmounts, baseAmount);
+            return baseAmounts;
         };
     }
 
     /**
-     * 加权分摊算法：按权重比例分配金额，零头按指定策略处理
-     *
-     * @param weights 权重数组
-     * @param remainderStrategy 零头处理策略
+     * 加权分摊基础算法：按权重比例分配总金额
      */
-    public static Allocator weightedAllocator(BigDecimal[] weights, RemainderStrategy remainderStrategy) {
-        return totalAmount -> {
-            int quantity = weights.length;
-            if (quantity <= 0) {
-                throw new IllegalArgumentException("权重数组不能为空");
+    public static BaseAllocator weightedAllocator(BigDecimal[] weights) {
+        return (totalAmount, quantity, precision) -> {
+            if (weights == null || weights.length != quantity) {
+                throw new IllegalArgumentException("权重数组长度与分摊数量不一致");
             }
 
             // 计算总权重
@@ -96,252 +118,212 @@ public class AmountAllocationUtils {
                 throw new IllegalArgumentException("总权重必须大于0");
             }
 
-            // 按权重分配基础金额（向下取整）
-            BigDecimal[] result = new BigDecimal[quantity];
-            BigDecimal allocated = BigDecimal.ZERO;
-            
-            for (int i = 0; i < quantity - 1; i++) {
-                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.HALF_UP);
-                result[i] = totalAmount.multiply(weightRatio).setScale(2, RoundingMode.DOWN);
-                allocated = allocated.add(result[i]);
+            // 按权重分配基础金额（向下取整到指定精度）
+            BigDecimal[] baseAmounts = new BigDecimal[quantity];
+            int scale = getScale(precision);
+
+            for (int i = 0; i < quantity; i++) {
+                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.DOWN);
+                BigDecimal amount = totalAmount.multiply(weightRatio);
+                baseAmounts[i] = amount.setScale(scale, RoundingMode.DOWN);
             }
-            
-            // 最后一个位置用剩余金额（避免精度误差）
-            result[quantity - 1] = totalAmount.subtract(allocated).setScale(2, RoundingMode.DOWN);
-            
-            // 计算总零头（可能为负数，表示分配超额）
-            BigDecimal totalRemainder = totalAmount.subtract(
-                Arrays.stream(result).reduce(BigDecimal.ZERO, BigDecimal::add)
-            );
-            
-            // 应用零头策略
-            return remainderStrategy.apply(result, totalRemainder);
+
+            return baseAmounts;
         };
     }
 
     // ------------------------------ 零头处理策略 ------------------------------
 
     /**
-     * 零头处理策略接口：定义如何调整基础金额以处理零头
+     * 零头处理策略接口
      */
     @FunctionalInterface
     public interface RemainderStrategy {
         /**
          * 应用零头调整
-         * @param baseAmounts 基础金额数组
-         * @param totalRemainder 总零头（可能为负数，表示分配超额）
-         * @return 调整后的金额数组（必须确保总和等于总金额）
          */
-        BigDecimal[] apply(BigDecimal[] baseAmounts, BigDecimal totalRemainder);
+        BigDecimal[] apply(BigDecimal[] baseAmounts, BigDecimal totalRemainder, BigDecimal precision);
     }
 
     // ------------------------------ 内置零头策略 ------------------------------
 
     /**
-     * 零头策略：按顺序分配零头（前n个位置各加0.01，直到零头分完）
+     * 顺序分配零头策略：按数组顺序逐个分配零头
      */
     public static RemainderStrategy sequential() {
-        return (baseAmounts, totalRemainder) -> {
-            BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
-
-            // 转换零头为最小单位（分）
-            int cents = totalRemainder.multiply(new BigDecimal("100"))
-                    .setScale(0, RoundingMode.DOWN).intValue();
-            
-            // 正数零头：按顺序增加
-            if (cents > 0) {
-                for (int i = 0; i < result.length && cents > 0; i++) {
-                    result[i] = result[i].add(new BigDecimal("0.01"));
-                    cents--;
-                }
-            } 
-            // 负数零头：按顺序减少（绝对值处理）
-            else if (cents < 0) {
-                cents = -cents;
-                for (int i = 0; i < result.length && cents > 0; i++) {
-                    result[i] = result[i].subtract(new BigDecimal("0.01"));
-                    cents--;
-                }
-            }
-            
-            return result;
-        };
+        return (baseAmounts, totalRemainder, precision) -> adjustByUnitOrder(baseAmounts, totalRemainder, precision,
+                IntStream.range(0, baseAmounts.length).toArray());
     }
 
     /**
-     * 零头策略：随机分配零头
+     * 随机分配零头策略：随机选择位置分配零头
      */
     public static RemainderStrategy random() {
-        return (baseAmounts, totalRemainder) -> {
-            BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
+        return (baseAmounts, totalRemainder, precision) -> {
+            List<Integer> positions = IntStream.range(0, baseAmounts.length)
+                    .boxed()
+                    .collect(Collectors.toList());
+            Collections.shuffle(positions);
 
-            int cents = totalRemainder.multiply(new BigDecimal("100"))
-                    .setScale(0, RoundingMode.DOWN).intValue();
-            
-            // 正数零头：随机增加
-            if (cents > 0) {
-                List<Integer> positions = IntStream.range(0, result.length)
-                        .boxed().collect(Collectors.toList());
-                Collections.shuffle(positions);
-                
-                for (int i = 0; i < positions.size() && cents > 0; i++) {
-                    result[positions.get(i)] = result[positions.get(i)].add(new BigDecimal("0.01"));
-                    cents--;
-                }
-            } 
-            // 负数零头：随机减少
-            else if (cents < 0) {
-                cents = -cents;
-                List<Integer> positions = IntStream.range(0, result.length)
-                        .boxed().collect(Collectors.toList());
-                Collections.shuffle(positions);
-                
-                for (int i = 0; i < positions.size() && cents > 0; i++) {
-                    result[positions.get(i)] = result[positions.get(i)].subtract(new BigDecimal("0.01"));
-                    cents--;
-                }
-            }
-            
-            return result;
+            return adjustByUnitOrder(baseAmounts, totalRemainder, precision,
+                    positions.stream().mapToInt(Integer::intValue).toArray());
         };
     }
 
     /**
-     * 零头策略：集中分配到最小值位置
+     * 金额从小到大顺序分配策略：按金额升序逐个分配零头
+     */
+    public static RemainderStrategy sequentialByMinValue() {
+        return (baseAmounts, totalRemainder, precision) -> {
+            return adjustBySortedValue(baseAmounts, totalRemainder, precision, false);
+        };
+    }
+
+    /**
+     * 金额从大到小顺序分配策略：按金额降序逐个分配零头
+     */
+    public static RemainderStrategy sequentialByMaxValue() {
+        return (baseAmounts, totalRemainder, precision) -> {
+            return adjustBySortedValue(baseAmounts, totalRemainder, precision, true);
+        };
+    }
+
+    /**
+     * 最小值集中策略：将零头集中分配到最小值位置
      */
     public static RemainderStrategy minValue() {
-        return (baseAmounts, totalRemainder) -> {
+        return (baseAmounts, totalRemainder, precision) -> {
+            if (totalRemainder.compareTo(BigDecimal.ZERO) <= 0) {
+                return baseAmounts;
+            }
+            int minIndex = findMinIndex(baseAmounts);
             BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
-
-            // 找到最小值位置
-            int minIndex = 0;
-            for (int i = 1; i < result.length; i++) {
-                if (result[i].compareTo(result[minIndex]) < 0) {
-                    minIndex = i;
-                }
-            }
-            
-            // 将零头集中到最小值位置
             result[minIndex] = result[minIndex].add(totalRemainder);
             return result;
         };
     }
 
     /**
-     * 零头策略：集中分配到最大值位置
+     * 最大值集中策略：将零头集中分配到最大值位置
      */
     public static RemainderStrategy maxValue() {
-        return (baseAmounts, totalRemainder) -> {
+        return (baseAmounts, totalRemainder, precision) -> {
+            if (totalRemainder.compareTo(BigDecimal.ZERO) <= 0) {
+                return baseAmounts;
+            }
+            int maxIndex = findMaxIndex(baseAmounts);
             BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
-
-            // 找到最大值位置
-            int maxIndex = 0;
-            for (int i = 1; i < result.length; i++) {
-                if (result[i].compareTo(result[maxIndex]) > 0) {
-                    maxIndex = i;
-                }
-            }
-            
-            // 将零头集中到最大值位置
             result[maxIndex] = result[maxIndex].add(totalRemainder);
             return result;
         };
     }
 
     /**
-     * 零头策略：按金额从小到大的顺序分配零头
+     * 按指定顺序和单位调整零头
      */
-    public static RemainderStrategy sequentialByMinValue() {
-        return (baseAmounts, totalRemainder) -> {
-            BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
+    private static BigDecimal[] adjustByUnitOrder(
+            BigDecimal[] baseAmounts,
+            BigDecimal totalRemainder,
+            BigDecimal precision,
+            int[] positions
+    ) {
+        BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
+        // 转换为最小单位（可正可负）
+        int units = totalRemainder.divide(precision, 0, RoundingMode.DOWN).intValue();
 
-            int cents = totalRemainder.multiply(new BigDecimal("100"))
-                    .setScale(0, RoundingMode.DOWN).intValue();
-            
-            // 创建带索引的金额列表，按金额排序
-            List<IndexedAmount> indexedAmounts = IntStream.range(0, result.length)
-                    .mapToObj(i -> new IndexedAmount(i, result[i]))
-                    .collect(Collectors.toList());
-            
-            // 正数零头：从小到大增加
-            if (cents > 0) {
-                indexedAmounts.sort(Comparator.comparing(IndexedAmount::getAmount));
-                for (IndexedAmount item : indexedAmounts) {
-                    if (cents <= 0) break;
-                    result[item.getIndex()] = result[item.getIndex()].add(new BigDecimal("0.01"));
-                    cents--;
-                }
-            } 
-            // 负数零头：从小到大减少（绝对值处理）
-            else if (cents < 0) {
-                cents = -cents;
-                indexedAmounts.sort(Comparator.comparing(IndexedAmount::getAmount));
-                for (IndexedAmount item : indexedAmounts) {
-                    if (cents <= 0) break;
-                    result[item.getIndex()] = result[item.getIndex()].subtract(new BigDecimal("0.01"));
-                    cents--;
+        // 正数：加
+        if (units > 0) {
+            for (int pos : positions) {
+                if (units == 0) break;
+                result[pos] = result[pos].add(precision);
+                units--;
+            }
+        }
+        // 负数：减
+        else if (units < 0) {
+            units = -units;  // 取绝对值
+            for (int pos : positions) {
+                if (units == 0) break;
+                if (result[pos].compareTo(precision) >= 0) {
+                    result[pos] = result[pos].subtract(precision);
+                    units--;
                 }
             }
-            
-            return result;
-        };
+        }
+        return result;
     }
 
     /**
-     * 零头策略：按金额从大到小的顺序分配零头
+     * 按金额排序后调整零头
      */
-    public static RemainderStrategy sequentialByMaxValue() {
-        return (baseAmounts, totalRemainder) -> {
-            BigDecimal[] result = Arrays.copyOf(baseAmounts, baseAmounts.length);
-            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
-                return result;
-            }
+    private static BigDecimal[] adjustBySortedValue(
+            BigDecimal[] baseAmounts,
+            BigDecimal totalRemainder,
+            BigDecimal precision,
+            boolean descending
+    ) {
+        // 创建带索引的金额列表
+        IndexedAmount[] indexedAmounts = IntStream.range(0, baseAmounts.length)
+                .mapToObj(i -> new IndexedAmount(i, baseAmounts[i]))
+                .toArray(IndexedAmount[]::new);
 
-            int cents = totalRemainder.multiply(new BigDecimal("100"))
-                    .setScale(0, RoundingMode.DOWN).intValue();
-            
-            // 创建带索引的金额列表，按金额排序
-            List<IndexedAmount> indexedAmounts = IntStream.range(0, result.length)
-                    .mapToObj(i -> new IndexedAmount(i, result[i]))
-                    .collect(Collectors.toList());
-            
-            // 正数零头：从大到小增加
-            if (cents > 0) {
-                indexedAmounts.sort(Comparator.comparing(IndexedAmount::getAmount).reversed());
-                for (IndexedAmount item : indexedAmounts) {
-                    if (cents <= 0) break;
-                    result[item.getIndex()] = result[item.getIndex()].add(new BigDecimal("0.01"));
-                    cents--;
-                }
-            } 
-            // 负数零头：从大到小减少
-            else if (cents < 0) {
-                cents = -cents;
-                indexedAmounts.sort(Comparator.comparing(IndexedAmount::getAmount).reversed());
-                for (IndexedAmount item : indexedAmounts) {
-                    if (cents <= 0) break;
-                    result[item.getIndex()] = result[item.getIndex()].subtract(new BigDecimal("0.01"));
-                    cents--;
-                }
+        // 排序
+        Comparator<IndexedAmount> comparator = Comparator.comparing(IndexedAmount::getAmount);
+        if (descending) {
+            comparator = comparator.reversed();
+        }
+        Arrays.sort(indexedAmounts, comparator);
+
+        // 提取排序后的索引顺序
+        int[] positions = Arrays.stream(indexedAmounts)
+                .mapToInt(IndexedAmount::getIndex)
+                .toArray();
+
+        // 按顺序调整零头
+        return adjustByUnitOrder(baseAmounts, totalRemainder, precision, positions);
+    }
+
+    /**
+     * 找到数组中的最小值索引
+     */
+    private static int findMinIndex(BigDecimal[] amounts) {
+        int minIndex = 0;
+        for (int i = 1; i < amounts.length; i++) {
+            if (amounts[i].compareTo(amounts[minIndex]) < 0) {
+                minIndex = i;
             }
-            
-            return result;
-        };
+        }
+        return minIndex;
+    }
+
+    /**
+     * 找到数组中的最大值索引
+     */
+    private static int findMaxIndex(BigDecimal[] amounts) {
+        int maxIndex = 0;
+        for (int i = 1; i < amounts.length; i++) {
+            if (amounts[i].compareTo(amounts[maxIndex]) > 0) {
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
+
+    /**
+     * 将金额按指定精度舍入
+     */
+    private static BigDecimal roundToPrecision(BigDecimal value, BigDecimal precision) {
+        int scale = getScale(precision);
+        return value.setScale(scale, RoundingMode.DOWN);
+    }
+
+    /**
+     * 获取精度对应的小数位数
+     */
+    private static int getScale(BigDecimal precision) {
+        String precisionStr = precision.stripTrailingZeros().toPlainString();
+        int dotIndex = precisionStr.indexOf('.');
+        return dotIndex < 0 ? 0 : precisionStr.length() - dotIndex - 1;
     }
 
     // ------------------------------ 内部类 ------------------------------
