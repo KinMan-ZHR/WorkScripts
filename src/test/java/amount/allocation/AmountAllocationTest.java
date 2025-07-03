@@ -1,127 +1,347 @@
 package amount.allocation;
 
-import amount.allocation.AmountAllocationUtils.BaseAllocator;
-import amount.allocation.AmountAllocationUtils.RemainderStrategy;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
-
+import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Arrays;
+import static org.junit.jupiter.api.Assertions.*;
 
-@RunWith(MockitoJUnitRunner.class)
-public class AmountAllocationTest {
-    @Test
-    public void testAmountAllocation() {
-            BigDecimal totalAmount = new BigDecimal("3.05");
-            int quantity = 3;
+class AmountAllocationUtilsTest {
 
-            // 自定义 BaseAllocator：返回 [1.00, 1.00, 1.00] → 总和 = 3.00
-            BaseAllocator baseAllocator = (total, qty, precision) -> {
-                BigDecimal[] amounts = new BigDecimal[qty];
-                Arrays.fill(amounts, new BigDecimal("1.00"));
-                return amounts;
-            };
+    // 验证分摊结果总和是否等于总金额
+    private void assertSumEquals(BigDecimal[] amounts, BigDecimal expectedSum) {
+        BigDecimal actualSum = Arrays.stream(amounts)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertEquals(expectedSum, actualSum, "分摊结果总和应等于总金额");
+    }
 
-            // 使用 sequential 零头策略
-            RemainderStrategy remainderStrategy = AmountAllocationUtils.sequential();
-
-            BigDecimal[] result = AmountAllocationUtils.allocate(
-                    totalAmount,
-                    quantity,
-                    baseAllocator,
-                    remainderStrategy
-            );
-
-            System.out.println("分摊结果：");
-            for (BigDecimal bd : result) {
-                System.out.println(bd.toPlainString());
-            }
-
-            BigDecimal sum = Arrays.stream(result)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            System.out.println("最终总和：" + sum.toPlainString());
-        }
-
-    @Test
-    public void OverBaseAmountTest() {
-        // 总金额
-        BigDecimal totalAmount = new BigDecimal("3.00");
-        int quantity = 3;
-
-        // 自定义 BaseAllocator：返回 [1.01, 1.01, 1.01]
-        BaseAllocator baseAllocator = (total, qty, precision) -> {
-            BigDecimal[] amounts = new BigDecimal[qty];
-            Arrays.fill(amounts, new BigDecimal("1.01"));  // ❗❗❗ 故意超出
-            return amounts;
-        };
-
-        // 使用 sequential 零头策略（不影响验证逻辑）
-        RemainderStrategy remainderStrategy = AmountAllocationUtils.sequential();
-
-        try {
-            BigDecimal[] result = AmountAllocationUtils.allocate(
-                    totalAmount,
-                    quantity,
-                    baseAllocator,
-                    remainderStrategy
-            );
-
-            System.out.println("调整后结果：");
-            for (BigDecimal bd : result) {
-                System.out.println(bd.toPlainString());
-            }
-
-            BigDecimal sum = Arrays.stream(result)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            System.out.println("调整后总和：" + sum.toPlainString());
-
-        } catch (IllegalStateException e) {
-            System.err.println("✅ 触发异常：" + e.getMessage());
+    // 验证分摊结果是否按预期分配
+    private void assertAllocationEquals(BigDecimal[] actual, BigDecimal[] expected) {
+        assertEquals(expected.length, actual.length, "分摊数量不匹配");
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], actual[i],
+                    String.format("位置 %d 的分摊金额不匹配，预期 %s，实际 %s",
+                            i, expected[i].toPlainString(), actual[i].toPlainString()));
         }
     }
+
     @Test
-    public void testWeightedOverallocatedCase() {
-        BigDecimal totalAmount = new BigDecimal("3.00");
-        int quantity = 3;
-
-        // 权重相等，理论上每份应为 1.00
-        BigDecimal[] weights = {
-                new BigDecimal("1"),
-                new BigDecimal("1"),
-                new BigDecimal("1")
-        };
-
-        // 自定义加权分配器：强制舍入方式为 DOWN，但因中间计算误差导致偏高
-        BaseAllocator baseAllocator = (total, qty, precision) -> {
-            BigDecimal totalWeight = Arrays.stream(weights).reduce(BigDecimal.ZERO, BigDecimal::add);
-            String precisionStr = precision.stripTrailingZeros().toPlainString();
-            int dotIndex = precisionStr.indexOf('.');
-            int scale = dotIndex < 0 ? 0 : precisionStr.length() - dotIndex - 1;
-
-            BigDecimal[] amounts = new BigDecimal[qty];
-            for (int i = 0; i < qty; i++) {
-                BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.HALF_UP);
-                BigDecimal amount = total.multiply(weightRatio).setScale(scale, RoundingMode.DOWN);
-                amounts[i] = amount;
-            }
-
-            // 手动引入一个“尾差”导致总和偏大
-            amounts[2] = amounts[2].add(new BigDecimal("0.01"));
-
-            return amounts;
-        };
-
-        RemainderStrategy remainderStrategy = AmountAllocationUtils.sequential();
+    void testEvenAllocation_NoRemainder() {
+        BigDecimal total = new BigDecimal("100.00");
+        int quantity = 4;
 
         BigDecimal[] result = AmountAllocationUtils.allocate(
-                totalAmount, quantity, baseAllocator, remainderStrategy);
+                total,
+                quantity,
+                AmountAllocationUtils.evenAllocator(),
+                AmountAllocationUtils.sequential()
+        );
 
-        BigDecimal sum = Arrays.stream(result).reduce(BigDecimal.ZERO, BigDecimal::add);
-        System.out.println("调整后总和：" + sum.toPlainString());
+        assertSumEquals(result, total);
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("25.00"),
+                new BigDecimal("25.00"),
+                new BigDecimal("25.00"),
+                new BigDecimal("25.00")
+        });
     }
 
+    @Test
+    void testEvenAllocation_WithRemainder() {
+        BigDecimal total = new BigDecimal("100.01");
+        int quantity = 4;
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.evenAllocator(),
+                AmountAllocationUtils.sequential()
+        );
+
+        assertSumEquals(result, total);
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("25.01"),
+                new BigDecimal("25.00"),
+                new BigDecimal("25.00"),
+                new BigDecimal("25.00")
+        });
+    }
+
+    @Test
+    void testWeightedAllocation_Simple() {
+        BigDecimal total = new BigDecimal("100.00");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.sequential()
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：[16.67, 33.33, 50.00]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.67"),
+                new BigDecimal("33.33"),
+                new BigDecimal("50.00")
+        });
+    }
+
+    @Test
+    void testWeightedAllocation_WithRemainder() {
+        BigDecimal total = new BigDecimal("100.01");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.sequentialByMaxValue()
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：[16.66, 33.33 +0.01, 50.0 + 0.01]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.66"),
+                new BigDecimal("33.34"),
+                new BigDecimal("50.01")
+        });
+    }
+
+    @Test
+    void testWeightedRemainderStrategy() {
+        BigDecimal total = new BigDecimal("100.05");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.weightedRemainder(weights)
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：
+        // 基础分摊：[16.67, 33.35, 50.03]
+        // 零头 0.01 按权重分配：[0.00, 0.00, 0.01]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.67"),
+                new BigDecimal("33.35"),
+                new BigDecimal("50.03")
+        });
+    }
+
+    @Test
+    void testLargeRemainder_EnhancedSequential() {
+        BigDecimal total = new BigDecimal("100.12");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.sequential()
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：
+        // 基础分摊：[16.68, 33.37, 50.06]
+        // 零头 0.01 按顺序分配：[0.01, 0.00, 0.00]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.69"),
+                new BigDecimal("33.37"),
+                new BigDecimal("50.06")
+        });
+    }
+
+    @Test
+    void testMinValueRemainderStrategy() {
+        BigDecimal total = new BigDecimal("100.04");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.minValue()
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：
+        // 基础分摊：[16.67, 33.34, 50.02]
+        // 零头 0.01 按权重分配：[0.00, 0.00, 0.01]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.68"),
+                new BigDecimal("33.34"),
+                new BigDecimal("50.02")
+        });
+    }
+
+    @Test
+    void testMaxValueRemainderStrategy() {
+        BigDecimal total = new BigDecimal("100.04");
+        int quantity = 3;
+        BigDecimal[] weights = {
+                new BigDecimal("1"),
+                new BigDecimal("2"),
+                new BigDecimal("3")
+        };
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.weightedAllocator(weights),
+                AmountAllocationUtils.maxValue()
+        );
+
+        assertSumEquals(result, total);
+        // 预期结果：
+        // 基础分摊：[16.67, 33.34, 50.02]
+        // 零头 0.01 按权重分配：[0.00, 0.00, 0.01]
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("16.67"),
+                new BigDecimal("33.34"),
+                new BigDecimal("50.03")
+        });
+    }
+
+    @Test
+    void testCustomPrecision() {
+        BigDecimal total = new BigDecimal("100.000");
+        int quantity = 3;
+        BigDecimal precision = new BigDecimal("0.001");
+
+        BigDecimal[] result = AmountAllocationUtils.allocate(
+                total,
+                quantity,
+                AmountAllocationUtils.evenAllocator(),
+                AmountAllocationUtils.sequential(),
+                precision
+        );
+
+        assertSumEquals(result, total);
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("33.334"),
+                new BigDecimal("33.333"),
+                new BigDecimal("33.333")
+        });
+    }
+
+    @Test
+    void testIllegalArguments() {
+        // 测试负数总金额
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.allocate(
+                    new BigDecimal("-100.00"),
+                    3,
+                    AmountAllocationUtils.evenAllocator(),
+                    AmountAllocationUtils.sequential()
+            );
+        });
+
+        // 测试零分摊数量
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.allocate(
+                    new BigDecimal("100.00"),
+                    0,
+                    AmountAllocationUtils.evenAllocator(),
+                    AmountAllocationUtils.sequential()
+            );
+        });
+
+        // 测试无效精度
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.allocate(
+                    new BigDecimal("100.00"),
+                    3,
+                    AmountAllocationUtils.evenAllocator(),
+                    AmountAllocationUtils.sequential(),
+                    new BigDecimal("0")
+            );
+        });
+
+        // 测试空权重数组
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.weightedAllocator(null).baseAllocate(new BigDecimal("100"), 3, new BigDecimal("0.01"));
+        });
+
+        // 测试权重数组长度不匹配
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.weightedAllocator(new BigDecimal[] {
+                    new BigDecimal("1"),
+                    new BigDecimal("2")
+            }).baseAllocate(new BigDecimal("100"), 3, new BigDecimal("0.01"));
+        });
+
+        // 测试总权重为零
+        assertThrows(IllegalArgumentException.class, () -> {
+            AmountAllocationUtils.weightedAllocator(new BigDecimal[] {
+                    new BigDecimal("0"),
+                    new BigDecimal("0")
+            }).baseAllocate(new BigDecimal("100"), 2, new BigDecimal("0.01"));
+        });
+    }
+    @Test
+    public void testEvenAllocator_BasicCase() {
+        // 测试基本情况：100元均摊到3个位置，精度0.01元
+        BigDecimal totalAmount = new BigDecimal("100");
+        int quantity = 3;
+        BigDecimal precision = new BigDecimal("0.01");
+
+        // 执行均摊
+        BigDecimal[] result = AmountAllocationUtils.evenAllocator()
+                .baseAllocate(totalAmount, quantity, precision);
+
+        // 验证结果长度
+        assertEquals(quantity, result.length, "结果数组长度应等于分摊数量");
+
+        assertAllocationEquals(result, new BigDecimal[] {
+                new BigDecimal("33.33"),
+                new BigDecimal("33.33"),
+                new BigDecimal("33.33")
+        });
+    }
+
+    @Test
+    public void testEvenAllocator_ExactDivision() {
+        // 测试能整除的情况：99元均摊到3个位置，精度0.01元
+        BigDecimal totalAmount = new BigDecimal("99");
+        int quantity = 3;
+        BigDecimal precision = new BigDecimal("0.01");
+
+        // 执行均摊
+        BigDecimal[] result = AmountAllocationUtils.evenAllocator()
+                .baseAllocate(totalAmount, quantity, precision);
+
+        // 验证每个位置的金额相等
+        BigDecimal expected = new BigDecimal("33.00");
+        for (BigDecimal amount : result) {
+            assertEquals(expected, amount, "每个位置的金额应等于99÷3=33.00");
+        }
+    }
 }

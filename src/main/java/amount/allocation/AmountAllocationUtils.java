@@ -14,6 +14,125 @@ import java.util.stream.IntStream;
  * <p>
  * 用于将总金额按指定规则分摊到多个位置，支持自定义分摊算法、零头处理策略和分配精度。
  * 核心设计理念：将基础分摊算法与零头调整策略完全解耦，提高代码可维护性和扩展性。
+ * <p>
+ * <strong>使用方式说明</strong>：
+ * 1. 选择基础分摊算法（均摊/加权分摊）
+ * 2. 选择零头处理策略（顺序/随机/加权等）
+ * 3. 调用核心分摊方法执行分配
+ * <p>
+ * <strong>示例代码</strong>：
+ * <pre>{@code
+ * // 示例1：均摊总金额，顺序分配零头
+ * public class EvenAllocationExample {
+ *     public static void main(String[] args) {
+ *         // 总金额：100.50元
+ *         BigDecimal totalAmount = new BigDecimal("100.50");
+ *         // 分摊数量：3个位置
+ *         int quantity = 3;
+ *
+ *         // 选择基础分摊算法：均摊
+ *         BaseAllocator baseAllocator = AmountAllocationUtils.evenAllocator();
+ *         // 选择零头处理策略：顺序分配
+ *         RemainderStrategy remainderStrategy = AmountAllocationUtils.sequential();
+ *
+ *         // 执行分摊（使用默认精度：0.01元）
+ *         BigDecimal[] result = AmountAllocationUtils.allocate(
+ *             totalAmount,
+ *             quantity,
+ *             baseAllocator,
+ *             remainderStrategy
+ *         );
+ *
+ *         // 输出结果：总和应为100.50元
+ *         System.out.println("均摊结果：" + Arrays.toString(result));
+ *     }
+ * }
+ * }</pre>
+ *
+ * <pre>{@code
+ * // 示例2：加权分摊总金额，加权处理零头
+ * public class WeightedAllocationExample {
+ *     public static void main(String[] args) {
+ *         // 总金额：200.75元
+ *         BigDecimal totalAmount = new BigDecimal("200.75");
+ *         // 分摊数量：4个位置
+ *         int quantity = 4;
+ *         // 权重数组：[1, 2, 3, 4]
+ *         BigDecimal[] weights = {
+ *             new BigDecimal("1"),
+ *             new BigDecimal("2"),
+ *             new BigDecimal("3"),
+ *             new BigDecimal("4")
+ *         };
+ *
+ *         // 选择基础分摊算法：加权分摊
+ *         BaseAllocator baseAllocator = AmountAllocationUtils.weightedAllocator(weights);
+ *         // 选择零头处理策略：加权分配零头
+ *         RemainderStrategy remainderStrategy = AmountAllocationUtils.weightedRemainder(weights);
+ *
+ *         // 执行分摊（指定精度：0.01元）
+ *         BigDecimal[] result = AmountAllocationUtils.allocate(
+ *             totalAmount,
+ *             quantity,
+ *             baseAllocator,
+ *             remainderStrategy,
+ *             AmountAllocationUtils.DEFAULT_PRECISION
+ *         );
+ *
+ *         // 输出结果：总和应为200.75元
+ *         System.out.println("加权分摊结果：" + Arrays.toString(result));
+ *     }
+ * }
+ * }</pre>
+ *
+ * <pre>{@code
+ * // 示例3：自定义分摊算法和零头策略
+ * public class CustomAllocationExample {
+ *     public static void main(String[] args) {
+ *         // 总金额：150.30元
+ *         BigDecimal totalAmount = new BigDecimal("150.30");
+ *         // 分摊数量：5个位置
+ *         int quantity = 5;
+ *
+ *         // 自定义基础分摊算法：前两个位置分30%，后三个位置分70%
+ *         BaseAllocator customAllocator = (amount, qty, precision) -> {
+ *             BigDecimal[] result = new BigDecimal[qty];
+ *             BigDecimal firstPart = amount.multiply(new BigDecimal("0.3")).divide(
+ *                 BigDecimal.valueOf(2), 2, RoundingMode.DOWN);
+ *             BigDecimal secondPart = amount.multiply(new BigDecimal("0.7")).divide(
+ *                 BigDecimal.valueOf(3), 2, RoundingMode.DOWN);
+ *
+ *             result[0] = firstPart;
+ *             result[1] = firstPart;
+ *             result[2] = secondPart;
+ *             result[3] = secondPart;
+ *             result[4] = secondPart;
+ *             return result;
+ *         };
+ *
+ *         // 自定义零头策略：优先分配给最后一个位置
+ *         RemainderStrategy customStrategy = (base, remainder, precision) -> {
+ *             BigDecimal[] result = Arrays.copyOf(base, base.length);
+ *             result[result.length - 1] = result[result.length - 1].add(remainder);
+ *             return result;
+ *         };
+ *
+ *         // 执行分摊
+ *         BigDecimal[] result = AmountAllocationUtils.allocate(
+ *             totalAmount,
+ *             quantity,
+ *             customAllocator,
+ *             customStrategy
+ *         );
+ *
+ *         // 输出结果：总和应为150.30元
+ *         System.out.println("自定义分摊结果：" + Arrays.toString(result));
+ *     }
+ * }
+ * }</pre>
+ *
+ * @author KinMan Zhang or ZhangHaoRan
+ * @since 2025/7/3
  */
 public class AmountAllocationUtils {
 
@@ -54,7 +173,7 @@ public class AmountAllocationUtils {
         }
 
         // 执行基础分摊
-        BigDecimal[] baseAmounts = baseAllocator.allocate(totalAmount, quantity, precision);
+        BigDecimal[] baseAmounts = baseAllocator.baseAllocate(totalAmount, quantity, precision);
 
         // 计算零头（确保为正）
         BigDecimal baseSum = Arrays.stream(baseAmounts).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -86,7 +205,7 @@ public class AmountAllocationUtils {
         /**
          * 执行基础金额分摊
          */
-        BigDecimal[] allocate(BigDecimal totalAmount, int quantity, BigDecimal precision);
+        BigDecimal[] baseAllocate(BigDecimal totalAmount, int quantity, BigDecimal precision);
     }
 
     // ------------------------------ 内置基础分摊算法 ------------------------------
@@ -354,7 +473,7 @@ public class AmountAllocationUtils {
         }
 
         return (baseAmounts, totalRemainder, precision) -> {
-            if (totalRemainder.compareTo(BigDecimal.ZERO) <= 0) {
+            if (totalRemainder.compareTo(BigDecimal.ZERO) == 0) {
                 return baseAmounts;
             }
 
@@ -373,6 +492,9 @@ public class AmountAllocationUtils {
             BigDecimal[] result = Arrays.copyOf(baseAmounts, quantity);
             int scale = getScale(precision);
 
+            boolean isNegative = totalRemainder.compareTo(BigDecimal.ZERO) < 0;
+            BigDecimal adjustment = isNegative ? precision.negate() : precision;
+
             // 按权重比例分配零头
             BigDecimal[] remainderParts = new BigDecimal[quantity];
             BigDecimal allocatedRemainder = BigDecimal.ZERO;
@@ -382,22 +504,43 @@ public class AmountAllocationUtils {
                 BigDecimal weightRatio = weights[i].divide(totalWeight, 10, RoundingMode.HALF_UP);
                 BigDecimal remainderPart = totalRemainder.multiply(weightRatio);
 
-                // 向下取整到精度
-                remainderParts[i] = remainderPart.setScale(scale, RoundingMode.DOWN);
+                // 正数向下取整，负数向上取整
+                remainderParts[i] = isNegative
+                        ? remainderPart.setScale(scale, RoundingMode.UP)
+                        : remainderPart.setScale(scale, RoundingMode.DOWN);
                 allocatedRemainder = allocatedRemainder.add(remainderParts[i]);
             }
 
             // 计算剩余未分配的零头
             BigDecimal remainingRemainder = totalRemainder.subtract(allocatedRemainder);
-            int remainingUnits = remainingRemainder.divide(precision, 0, RoundingMode.DOWN).intValue();
+            int remainingUnits = remainingRemainder.abs().divide(precision, 0, RoundingMode.DOWN).intValue();
 
             // 按顺序分配剩余零头单位
             if (remainingUnits > 0) {
-                int[] positions = IntStream.range(0, quantity).toArray();
-                for (int pos : positions) {
+                // 1. 按权重从大到小排序位置索引
+                Integer[] sortedIndices = IntStream.range(0, quantity)
+                        .boxed()
+                        .sorted((i, j) -> weights[j].compareTo(weights[i]))
+                        .toArray(Integer[]::new);
+
+                // 2. 优先分配给零头为0的位置
+                for (int index : sortedIndices) {
                     if (remainingUnits <= 0) break;
-                    result[pos] = result[pos].add(precision);
-                    remainingUnits--;
+
+                    // 只给零头为0的位置分配
+                    if (remainderParts[index].compareTo(BigDecimal.ZERO) == 0) {
+                        remainderParts[index] = remainderParts[index].add(adjustment);
+                        remainingUnits--;
+                    }
+                }
+
+                // 3. 如果还有剩余零头，继续按权重从大到小分配
+                while (remainingUnits > 0) {
+                    for (int index : sortedIndices) {
+                        if (remainingUnits <= 0) break;
+                        remainderParts[index] = remainderParts[index].add(adjustment);
+                        remainingUnits--;
+                    }
                 }
             }
 
