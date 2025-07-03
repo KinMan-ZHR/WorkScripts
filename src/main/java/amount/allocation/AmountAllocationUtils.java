@@ -2,13 +2,16 @@ package amount.allocation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
  * 金额分摊工具类
- *
+ * <p>
  * 用于将总金额按指定规则分摊到多个位置，支持自定义分摊算法、零头处理策略和分配精度。
  * 核心设计理念：将基础分摊算法与零头调整策略完全解耦，提高代码可维护性和扩展性。
  */
@@ -174,18 +177,14 @@ public class AmountAllocationUtils {
      * 金额从小到大顺序分配策略：按金额升序逐个分配零头
      */
     public static RemainderStrategy sequentialByMinValue() {
-        return (baseAmounts, totalRemainder, precision) -> {
-            return adjustBySortedValue(baseAmounts, totalRemainder, precision, false);
-        };
+        return (baseAmounts, totalRemainder, precision) -> adjustBySortedValue(baseAmounts, totalRemainder, precision, false);
     }
 
     /**
      * 金额从大到小顺序分配策略：按金额降序逐个分配零头
      */
     public static RemainderStrategy sequentialByMaxValue() {
-        return (baseAmounts, totalRemainder, precision) -> {
-            return adjustBySortedValue(baseAmounts, totalRemainder, precision, true);
-        };
+        return (baseAmounts, totalRemainder, precision) -> adjustBySortedValue(baseAmounts, totalRemainder, precision, true);
     }
 
     /**
@@ -307,14 +306,6 @@ public class AmountAllocationUtils {
             }
         }
         return maxIndex;
-    }
-
-    /**
-     * 将金额按指定精度舍入
-     */
-    private static BigDecimal roundToPrecision(BigDecimal value, BigDecimal precision) {
-        int scale = getScale(precision);
-        return value.setScale(scale, RoundingMode.DOWN);
     }
 
     /**
