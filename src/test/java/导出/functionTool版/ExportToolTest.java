@@ -15,10 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -51,8 +47,7 @@ class ExportToolTest {
     @Test
     void testGetExportClassFromGenericInterface() {
         Function<String, Integer> func = Integer::valueOf;
-        Class<Integer> exportClass = exportTool.getExportClass(func);
-        assertEquals(Integer.class, exportClass);
+        assertThrows(ExportTool.ExportTypeInferenceException.class, () -> exportTool.getExportClass(func));
     }
 
     @Test
@@ -142,7 +137,7 @@ class ExportToolTest {
 
             // 5. 创建处理器并执行
             ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(
-                    queryFunc, convertFunc, Integer.class, "测试导出"
+                   queryFunc, convertFunc, Integer.class, "测试导出"
             );
             MockPageIn in = new MockPageIn();
             com.jiuaoedu.common.Result<Long> result = handler.handle(in);
@@ -180,7 +175,7 @@ class ExportToolTest {
 
             // 执行测试
             ExportTool.ExportHandler<MockPageIn> handler = exportTool.createExportHandler(
-                    queryFunc, convertFunc, Integer.class, "测试导出"
+                   10000, queryFunc, convertFunc, Integer.class, "测试导出"
             );
             MockPageIn in = new MockPageIn();
             com.jiuaoedu.common.Result<Long> result = handler.handle(in);

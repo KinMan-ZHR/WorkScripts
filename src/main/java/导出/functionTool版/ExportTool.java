@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestBody;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -104,7 +103,25 @@ public class ExportTool {
             Function<R, E> convertMethod,
             String exportFileName) {
             Class<E> exportClass = getExportClass(convertMethod);
-            return createExportHandler(queryMethod, convertMethod, exportClass, exportFileName);
+            return createExportHandler(10000, queryMethod, convertMethod, exportClass, exportFileName);
+    }
+
+    /**
+     * 创建导出处理器（自动推导导出类型）
+     *
+     * @param <I>            查询条件类型
+     * @param <R>            原始查询结果类型
+     * @param queryMethod    查询方法
+     * @param convertMethod  转换方法（隐含导出类型）
+     * @param exportFileName 导出文件名
+     * @return 导出接口处理函数
+     */
+    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
+            ExportQueryFunction<I, R> queryMethod,
+            Function<R, E> convertMethod,
+            Class<E> exportClass,
+            String exportFileName) {
+            return createExportHandler(10000, queryMethod, convertMethod, exportClass, exportFileName);
     }
 
     /**
@@ -117,11 +134,27 @@ public class ExportTool {
     }
 
     /**
-     * 创建导出处理器（显式指定导出类型）
+     * 创建可配置分页大小的导出处理器（自动推导导出类型）
      *
-     * @param <I>            查询条件类型
-     * @param <R>            原始查询结果类型
-     * @param <E>            导出数据类型
+     * @param pageSize       分页查询大小（建议根据数据量调整，默认10000）
+     * @param queryMethod    查询方法
+     * @param convertMethod  转换方法（隐含导出类型）
+     * @param exportFileName 导出文件名
+     * @return 导出接口处理函数
+     */
+    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
+            int pageSize,
+            ExportQueryFunction<I, R> queryMethod,
+            Function<R, E> convertMethod,
+            String exportFileName) {
+        Class<E> exportClass = getExportClass(convertMethod);
+        return createExportHandler(pageSize, queryMethod, convertMethod, exportClass, exportFileName);
+    }
+
+    /**
+     * 创建可配置分页大小的导出处理器（显式指定导出类型）
+     *
+     * @param pageSize       分页查询大小（建议根据数据量调整，默认10000）
      * @param queryMethod    查询方法
      * @param convertMethod  转换方法
      * @param exportClass    导出数据类型的 Class 对象
@@ -129,6 +162,7 @@ public class ExportTool {
      * @return 导出接口处理函数
      */
     public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
+            int pageSize,
             ExportQueryFunction<I, R> queryMethod,
             Function<R, E> convertMethod,
             Class<E> exportClass,
@@ -137,8 +171,7 @@ public class ExportTool {
             CreateTaskIn createTaskIn = new CreateTaskIn();
             createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
             createTaskIn.setFileNme(exportFileName);
-            in.setPageSize(Integer.MAX_VALUE);
-            in.setPageNum(1);
+            // 不覆盖用户传入的分页参数
             createTaskIn.setParams(JSON.toJSONString(in));
             Long taskId = exportClient.createExportTask(createTaskIn);
 
@@ -146,14 +179,13 @@ public class ExportTool {
                 @Override
                 public void execute() {
                     try {
-                        List<E> exportData = fetchAndConvertData(in, queryMethod, convertMethod);
+                        List<E> exportData = fetchAndConvertDataWithCustomPageSize(in, pageSize, queryMethod, convertMethod);
                         exportSingleSheet(taskId, exportData, exportClass, exportFileName);
                     } catch (Exception e) {
                         log.error(exportFileName + "导出失败", e);
                         exportClient.failedExportTask(taskId, e.getMessage());
                     }
                 }
-
                 private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
                     Map<String, List<?>> datas = new HashMap<>(4);
                     datas.put("sheet1", dataList);
@@ -165,6 +197,37 @@ public class ExportTool {
 
             return com.jiuaoedu.common.Result.success(taskId);
         };
+    }
+
+    /**
+     * 使用自定义分页大小查询并转换数据
+     */
+    private <I extends PageIn, R, E> List<E> fetchAndConvertDataWithCustomPageSize(
+            I in,
+            int pageSize,
+            ExportQueryFunction<I, R> queryMethod,
+            Function<R, E> convertMethod) {
+
+        int pageNum = 1;
+        boolean hasNextPage = true;
+        List<E> exportData = new ArrayList<>();
+
+        while (hasNextPage) {
+            // 使用传入的分页大小而非固定值
+            in.setPageSize(pageSize);
+            in.setPageNum(pageNum);
+            Page<R> pageResult = queryMethod.apply(in);
+            List<R> results = pageResult.getList();
+
+            for (R result : results) {
+                exportData.add(convertMethod.apply(result));
+            }
+
+            hasNextPage = pageResult.isHasNextPage();
+            pageNum++;
+        }
+
+        return exportData;
     }
 
     public <I, R, E> ExportHandler<I> createExportHandlerNoPageProcess(
@@ -252,20 +315,6 @@ public class ExportTool {
     }
 
     /**
-     * 查找 Function 接口的 apply 方法（处理 Lambda 生成的桥接方法）
-     */
-    private Method findApplyMethod(Class<?> functionClass) throws NoSuchMethodException {
-        // 遍历所有方法，找到参数类型为 R 的 apply 方法
-        for (Method method : functionClass.getMethods()) {
-            if ("apply".equals(method.getName()) && method.getParameterCount() == 1) {
-                // Function 接口的 apply 方法参数类型为 R，返回类型为 E
-                return method;
-            }
-        }
-        throw new NoSuchMethodException("未找到 apply 方法");
-    }
-
-    /**
      * 分页查询并转换数据
      */
     <I extends PageIn, R, E> List<E> fetchAndConvertData(
@@ -273,7 +322,7 @@ public class ExportTool {
             ExportQueryFunction<I, R> queryMethod,
             Function<R, E> convertMethod) {
 
-        int pageSize = 20000;
+        int pageSize = 10000;
         int pageNum = 1;
         boolean hasNextPage = true;
         List<E> exportData = new ArrayList<>();
