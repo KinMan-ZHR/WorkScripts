@@ -2,7 +2,6 @@ package 导出.functionTool版;
 
 import com.alibaba.fastjson.JSON;
 import com.jiuaoedu.common.Page;
-import com.jiuaoedu.contract.edu.servicepublic.pojo.PageIn;
 import com.jiuaoedu.contract.edu.servicepublic.pojo.exporttask.CreateTaskIn;
 import com.jiuaoedu.servicepublic.export.service.ExportClient;
 import com.jiuaoedu.threadpool.ExecutorTask;
@@ -12,59 +11,58 @@ import org.slf4j.Logger;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestBody;
 
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.lang.reflect.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * 导出工具类：支持通过方法引用动态创建导出功能
+ * 智能导出工具类：自动识别分页需求，支持灵活配置
  * <p>
  * **使用方式说明**：
  * 1. 在Spring容器中注入`ExportTool`实例
- * 2. 定义查询方法（返回`Page<R>`）和转换方法（`R`转`E`）
- * 3. 通过`createExportHandler`创建导出处理器
+ * 2. 定义查询方法（返回`Page<R>`或`List<R>`）和转换方法（`R`转`E`）
+ * 3. 通过`createSmartExportHandler`创建导出处理器（支持多种重载形式）
  * 4. 在控制器中映射接口路径并调用处理器
  * <p>
- * **示例代码**：
- * ```java
- * * @RestController
- * * public class StudentExportController {
- * *     @Resource
- * *     private ExportTool exportTool;
- * *     @Resource
- * *     private StudentService studentService;
- * <p>
- * *     // 1. 定义查询方法（需返回Page<R>）
- * *     public Page<Student> queryStudents(StudentQueryIn in) {
- * *         return studentService.queryByPage(in);
- * *     }
- * <p>
- * *     // 2. 定义转换方法（R转E，E为导出类型）
- * *     public StudentExportVo convertToExportVo(Student student) {
- * *         // 字段映射逻辑
- * *         return new StudentExportVo();
- * *     }
- * <p>
- * *     // 3. 创建导出处理器
- * *     private final ExportTool.ExportHandler<StudentQueryIn> exportHandler =
- * *         exportTool.createExportHandler(
- * *             this::queryStudents,    // 查询方法引用
- * *             this::convertToExportVo, // 转换方法引用
- * *             "学生数据导出"           // 导出文件名
- * *         );
- * <p>
- * *     // 4. 控制器接口
- * *     @PostMapping("/api/students/export")
- * *     public Result<Long> export(@RequestBody StudentQueryIn in) {
- * *         return exportHandler.handle(in);
- * *     }
- * * }
- * ```
+ * <strong>示例代码</strong>：
+ * <pre>{@code
+ * @RestController
+ * public class StudentExportController {
+ *    @Resource
+ *    private ExportTool exportTool;
+ *    @Resource
+ *    private StudentService studentService;
+ *
+ *    // 分页查询方法（返回Page<R>）
+ *    public Page<Student> queryStudents(StudentQuery in) {
+ *        return studentService.queryByPage(in);
+ *    }
+ *
+ *    // 或不支持分页的查询方法（返回List<R>）
+ *    public List<Student> queryAllStudents(StudentQuerySimple in) {
+ *        return studentService.queryAll(in);
+ *    }
+ *
+ *    // 转换方法
+ *    public StudentExportVo convertToExportVo(Student student) {
+ *        return new StudentExportVo();
+ *    }
+ *
+ *    // 创建智能导出处理器（自动判断是否分页）
+ *    private final ExportTool.ExportHandler<StudentQuery> exportHandler =
+ *        exportTool.createSmartExportHandler(
+ *            this::queryStudents,    // 分页或非分页查询方法均可
+ *            this::convertToExportVo,
+ *            "学生数据导出"
+ *        );
+ *
+ *    @PostMapping("/api/students/export")
+ *    public Result<Long> export(@RequestBody StudentQuery in) {
+ *        return exportHandler.handle(in);
+ *    }
+ * }
+ * }</pre>
  *
  * @author ZhangHaoRan
  * @since 2025/7/1
@@ -73,14 +71,13 @@ public class ExportTool {
     private final ExportClient exportClient;
     private final TaskPool es;
     private final Logger log;
-    /**
-     * 创建导出处理工具
-     * @param exportClient 导出客户端
-     * @param es             线程池
-     *           private final TaskPool es = TaskPoolFactory.getTaskPool(1, 2, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(300), new ThreadPoolExecutor.AbortPolicy());
-     * @param log             日志记录器
-     *
-     */
+    private static final int DEFAULT_PAGE_SIZE = 10000;
+
+    // 反射缓存
+    private final Map<Class<?>, Method> pageSizeMethodCache = new ConcurrentHashMap<>();
+    private final Map<Class<?>, Method> pageNumMethodCache = new ConcurrentHashMap<>();
+    private final Map<Class<?>, Field> pageSizeFieldCache = new ConcurrentHashMap<>();
+    private final Map<Class<?>, Field> pageNumFieldCache = new ConcurrentHashMap<>();
 
     public ExportTool(ExportClient exportClient, TaskPool es, Logger log) {
         this.exportClient = exportClient;
@@ -89,89 +86,56 @@ public class ExportTool {
     }
 
     /**
-     * 创建导出处理器（自动推导导出类型）
-     *
-     * @param <I>            查询条件类型
-     * @param <R>            原始查询结果类型
-     * @param queryMethod    查询方法
-     * @param convertMethod  转换方法（隐含导出类型）
-     * @param exportFileName 导出文件名
-     * @return 导出接口处理函数
+     * 创建智能导出处理器（自动推导导出类型，使用默认分页大小）
      */
-    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
-            ExportQueryFunction<I, R> queryMethod,
+    public <I, R, E> ExportHandler<I> createSmartExportHandler(
+            Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
             String exportFileName) {
-            Class<E> exportClass = getExportClass(convertMethod);
-            return createExportHandler(10000, queryMethod, convertMethod, exportClass, exportFileName);
+
+        return createSmartExportHandler(queryMethod, convertMethod, DEFAULT_PAGE_SIZE, exportFileName);
     }
 
     /**
-     * 创建导出处理器（自动推导导出类型）
-     *
-     * @param <I>            查询条件类型
-     * @param <R>            原始查询结果类型
-     * @param queryMethod    查询方法
-     * @param convertMethod  转换方法（隐含导出类型）
-     * @param exportFileName 导出文件名
-     * @return 导出接口处理函数
+     * 创建智能导出处理器（自动推导导出类型，自定义分页大小）
      */
-    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
-            ExportQueryFunction<I, R> queryMethod,
+    public <I, R, E> ExportHandler<I> createSmartExportHandler(
+            Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
-            Class<E> exportClass,
-            String exportFileName) {
-            return createExportHandler(10000, queryMethod, convertMethod, exportClass, exportFileName);
-    }
-
-    /**
-     * 自定义异常类，用于类型推导失败的场景
-     */
-    public static class ExportTypeInferenceException extends RuntimeException {
-        public ExportTypeInferenceException(String message) {
-            super(message);
-        }
-    }
-
-    /**
-     * 创建可配置分页大小的导出处理器（自动推导导出类型）
-     *
-     * @param pageSize       分页查询大小（建议根据数据量调整，默认10000）
-     * @param queryMethod    查询方法
-     * @param convertMethod  转换方法（隐含导出类型）
-     * @param exportFileName 导出文件名
-     * @return 导出接口处理函数
-     */
-    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
             int pageSize,
-            ExportQueryFunction<I, R> queryMethod,
-            Function<R, E> convertMethod,
             String exportFileName) {
+
         Class<E> exportClass = getExportClass(convertMethod);
-        return createExportHandler(pageSize, queryMethod, convertMethod, exportClass, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, exportClass, pageSize, exportFileName);
     }
 
     /**
-     * 创建可配置分页大小的导出处理器（显式指定导出类型）
-     *
-     * @param pageSize       分页查询大小（建议根据数据量调整，默认10000）
-     * @param queryMethod    查询方法
-     * @param convertMethod  转换方法
-     * @param exportClass    导出数据类型的 Class 对象
-     * @param exportFileName 导出文件名
-     * @return 导出接口处理函数
+     * 创建智能导出处理器（显式指定导出类型，使用默认分页大小）
      */
-    public <I extends PageIn, R, E> ExportHandler<I> createExportHandler(
-            int pageSize,
-            ExportQueryFunction<I, R> queryMethod,
+    public <I, R, E> ExportHandler<I> createSmartExportHandler(
+            Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
             Class<E> exportClass,
             String exportFileName) {
+
+        return createSmartExportHandler(queryMethod, convertMethod, exportClass, DEFAULT_PAGE_SIZE, exportFileName);
+    }
+
+    /**
+     * 创建智能导出处理器（显式指定导出类型和分页大小）
+     * 这是最完整的配置方法，其他重载最终都会调用此方法
+     */
+    public <I, R, E> ExportHandler<I> createSmartExportHandler(
+            Function<I, ?> queryMethod,
+            Function<R, E> convertMethod,
+            Class<E> exportClass,
+            int pageSize,
+            String exportFileName) {
+
         return in -> {
             CreateTaskIn createTaskIn = new CreateTaskIn();
             createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
             createTaskIn.setFileNme(exportFileName);
-            // 不覆盖用户传入的分页参数
             createTaskIn.setParams(JSON.toJSONString(in));
             Long taskId = exportClient.createExportTask(createTaskIn);
 
@@ -179,19 +143,14 @@ public class ExportTool {
                 @Override
                 public void execute() {
                     try {
-                        List<E> exportData = fetchAndConvertDataWithCustomPageSize(in, pageSize, queryMethod, convertMethod);
+                        List<E> exportData = fetchDataIntelligently(
+                                in, queryMethod, convertMethod, pageSize);
+
                         exportSingleSheet(taskId, exportData, exportClass, exportFileName);
                     } catch (Exception e) {
                         log.error(exportFileName + "导出失败", e);
                         exportClient.failedExportTask(taskId, e.getMessage());
                     }
-                }
-                private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
-                    Map<String, List<?>> datas = new HashMap<>(4);
-                    datas.put("sheet1", dataList);
-                    Map<String, Class<?>> models = new HashMap<>(4);
-                    models.put("sheet1", modelClass);
-                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
                 }
             });
 
@@ -200,74 +159,179 @@ public class ExportTool {
     }
 
     /**
-     * 使用自定义分页大小查询并转换数据
+     * 智能获取数据：自动判断是否分页并执行相应查询
      */
-    private <I extends PageIn, R, E> List<E> fetchAndConvertDataWithCustomPageSize(
-            I in,
-            int pageSize,
-            ExportQueryFunction<I, R> queryMethod,
-            Function<R, E> convertMethod) {
+    @SuppressWarnings("unchecked")
+    <I, R, E> List<E> fetchDataIntelligently(
+            I in, Function<I, ?> queryMethod, Function<R, E> convertMethod, int pageSize) {
 
-        int pageNum = 1;
-        boolean hasNextPage = true;
         List<E> exportData = new ArrayList<>();
 
-        while (hasNextPage) {
-            // 使用传入的分页大小而非固定值
-            in.setPageSize(pageSize);
-            in.setPageNum(pageNum);
-            Page<R> pageResult = queryMethod.apply(in);
-            List<R> results = pageResult.getList();
+        // 检查是否支持分页
+        if (hasPaginationParams(in)) {
+            // 分页模式
+            int pageNum = 1;
+            boolean hasNextPage = true;
 
-            for (R result : results) {
-                exportData.add(convertMethod.apply(result));
+            while (hasNextPage) {
+                try {
+                    // 设置分页参数
+                    setPageParamsIfExists(in, pageSize, pageNum);
+
+                    // 执行查询
+                    Object result = queryMethod.apply(in);
+
+                    // 处理查询结果
+                    if (result instanceof Page) {
+                        // 分页结果处理
+                        Page<R> pageResult = (Page<R>) result;
+                        List<R> results = pageResult.getList();
+
+                        for (R item : results) {
+                            exportData.add(convertMethod.apply(item));
+                        }
+
+                        hasNextPage = pageResult.isHasNextPage();
+                        pageNum++;
+                    } else if (result instanceof List) {
+                        // 非分页结果（直接返回列表）
+                        List<R> results = (List<R>) result;
+                        for (R item : results) {
+                            exportData.add(convertMethod.apply(item));
+                        }
+                        hasNextPage = false; // 列表结果视为单页数据
+                    } else {
+                        throw new IllegalArgumentException("查询方法返回类型不支持: " +
+                                (result != null ? result.getClass().getName() : "null"));
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException("分页查询失败: " + e.getMessage(), e);
+                }
             }
+        } else {
+            // 非分页模式
+            try {
+                Object result = queryMethod.apply(in);
 
-            hasNextPage = pageResult.isHasNextPage();
-            pageNum++;
+                if (result instanceof List) {
+                    List<R> results = (List<R>) result;
+                    for (R item : results) {
+                        exportData.add(convertMethod.apply(item));
+                    }
+                } else if (result instanceof Page) {
+                    // 处理用户传入分页方法但未提供分页参数的情况
+                    Page<R> pageResult = (Page<R>) result;
+                    List<R> results = pageResult.getList();
+                    for (R item : results) {
+                        exportData.add(convertMethod.apply(item));
+                    }
+                } else {
+                    throw new IllegalArgumentException("查询方法返回类型不支持: " +
+                            (result != null ? result.getClass().getName() : "null"));
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("非分页查询失败: " + e.getMessage(), e);
+            }
         }
 
         return exportData;
     }
 
-    public <I, R, E> ExportHandler<I> createExportHandlerNoPageProcess(
-            ExportQueryFunctionNoPageProcess<I, R> queryMethod,
-            Function<R, E> convertMethod,
-            String exportFileName) {
-        // 通过转换方法反射获取导出类型
-        Class<E> exportClass = getExportClass(convertMethod);
+    /**
+     * 检查对象是否包含分页参数
+     */
+    boolean hasPaginationParams(Object obj) {
+        if (obj == null) return false;
 
-        return in -> {
-            CreateTaskIn createTaskIn = new CreateTaskIn();
-            createTaskIn.setOperatorId(RequestContextHolderUtils.getEmployeeId());
-            createTaskIn.setFileNme(exportFileName);
-            createTaskIn.setParams(JSON.toJSONString(in));
-            Long taskId = exportClient.createExportTask(createTaskIn);
+        Class<?> clazz = obj.getClass();
+        try {
+            // 检查是否有pageSize和pageNum字段或setter方法
+            boolean hasPageSize = findField(clazz, "pageSize") != null ||
+                    findMethod(clazz, "setPageSize", int.class) != null;
 
-            es.submit(new ExecutorTask() {
-                @Override
-                public void execute() {
-                    try {
-                        List<E> exportData = fetchAndConvertDataNoPageProcess(in, queryMethod, convertMethod);
-                        exportSingleSheet(taskId, exportData, exportClass, exportFileName);
-                    } catch (Exception e) {
-                        log.error(exportFileName + "导出失败", e);
-                        exportClient.failedExportTask(taskId, e.getMessage());
-                    }
+            boolean hasPageNum = findField(clazz, "pageNum") != null ||
+                    findMethod(clazz, "setPageNum", int.class) != null;
+
+            return hasPageSize && hasPageNum;
+        } catch (Exception e) {
+            log.warn("检测分页参数失败: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 安全设置分页参数（如果存在）
+     */
+    private void setPageParamsIfExists(Object obj, int pageSize, int pageNum) {
+        if (obj == null) return;
+
+        try {
+            Class<?> clazz = obj.getClass();
+
+            // 设置pageSize
+            Method setPageSizeMethod = findMethod(clazz, "setPageSize", int.class);
+            if (setPageSizeMethod != null) {
+                setPageSizeMethod.invoke(obj, pageSize);
+            } else {
+                Field pageSizeField = findField(clazz, "pageSize");
+                if (pageSizeField != null) {
+                    pageSizeField.setAccessible(true);
+                    pageSizeField.set(obj, pageSize);
                 }
+            }
 
-                private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
-                    Map<String, List<?>> datas = new HashMap<>(4);
-                    datas.put("sheet1", dataList);
-                    Map<String, Class<?>> models = new HashMap<>(4);
-                    models.put("sheet1", modelClass);
-                    exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
+            // 设置pageNum
+            Method setPageNumMethod = findMethod(clazz, "setPageNum", int.class);
+            if (setPageNumMethod != null) {
+                setPageNumMethod.invoke(obj, pageNum);
+            } else {
+                Field pageNumField = findField(clazz, "pageNum");
+                if (pageNumField != null) {
+                    pageNumField.setAccessible(true);
+                    pageNumField.set(obj, pageNum);
                 }
+            }
+        } catch (Exception e) {
+            log.warn("设置分页参数失败: {}", e.getMessage());
+        }
+    }
 
-            });
+    /**
+     * 查找方法（包括父类），带缓存
+     */
+    private Method findMethod(Class<?> clazz, String methodName, Class<?>... parameterTypes) {
+        Map<Class<?>, Method> cache = "setPageSize".equals(methodName) ? pageSizeMethodCache : pageNumMethodCache;
 
-            return com.jiuaoedu.common.Result.success(taskId);
-        };
+        return cache.computeIfAbsent(clazz, k -> {
+            try {
+                return clazz.getMethod(methodName, parameterTypes);
+            } catch (NoSuchMethodException e) {
+                Class<?> superClass = clazz.getSuperclass();
+                if (superClass != null && superClass != Object.class) {
+                    return findMethod(superClass, methodName, parameterTypes);
+                }
+                return null;
+            }
+        });
+    }
+
+    /**
+     * 查找字段（包括父类），带缓存
+     */
+    private Field findField(Class<?> clazz, String fieldName) {
+        Map<Class<?>, Field> cache = "pageSize".equals(fieldName) ? pageSizeFieldCache : pageNumFieldCache;
+
+        return cache.computeIfAbsent(clazz, k -> {
+            try {
+                return clazz.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                Class<?> superClass = clazz.getSuperclass();
+                if (superClass != null && superClass != Object.class) {
+                    return findField(superClass, fieldName);
+                }
+                return null;
+            }
+        });
     }
 
     /**
@@ -295,67 +359,29 @@ public class ExportTool {
                 }
             }
 
-            // 方案2：通过带有类型令牌的辅助方法（适用于 Lambda/方法引用）
-            // 注意：这种方式需要用户显式传递 Class<E>，但能确保正确性
-            // 2. 类型推导失败（业务层面的预期异常）
-            String inferenceErrorMsg = "无法自动推导导出类型。转换方法：" + convertMethod.getClass().getName() + " 因Lambda/方法引用的泛型擦除。请使用重载方法并显式指定导出类型：createExportHandler(queryMethod, convertMethod, ExportType.class, exportFileName)";
+            // 无法自动推导类型，抛出异常
+            String inferenceErrorMsg = "无法自动推导导出类型。转换方法：" + convertMethod.getClass().getName() + " 因Lambda/方法引用的泛型擦除。请使用重载方法并显式指定导出类型：createSmartExportHandler(queryMethod, convertMethod, ExportType.class, exportFileName)";
             throw new ExportTypeInferenceException(inferenceErrorMsg);
         } catch (SecurityException e) {
-            // 3. 反射权限异常（不可处理，需带上下文重抛）
             String contextMsg = "反射获取导出类型时无权限（转换方法：" + convertMethod.getClass().getName() + "）";
-            log.error(contextMsg, e); // 记录详细日志
-            throw new SecurityException(contextMsg, e); // 添加上下文后重抛
-
+            log.error(contextMsg, e);
+            throw new SecurityException(contextMsg, e);
         } catch (NoClassDefFoundError e) {
-            // 4. 类加载异常（不可处理，需带上下文重抛）
             String contextMsg = "转换方法依赖的类未找到（转换方法：" + convertMethod.getClass().getName() + "）";
-            log.error(contextMsg, e); // 记录详细日志
-            throw new NoClassDefFoundError(contextMsg); // 保留原始异常类型，添加上下文
+            log.error(contextMsg, e);
+            throw new NoClassDefFoundError(contextMsg);
         }
     }
 
     /**
-     * 分页查询并转换数据
+     * 导出单页数据
      */
-    <I extends PageIn, R, E> List<E> fetchAndConvertData(
-            I in,
-            ExportQueryFunction<I, R> queryMethod,
-            Function<R, E> convertMethod) {
-
-        int pageSize = 10000;
-        int pageNum = 1;
-        boolean hasNextPage = true;
-        List<E> exportData = new ArrayList<>();
-
-        while (hasNextPage) {
-            in.setPageSize(pageSize);
-            in.setPageNum(pageNum);
-            Page<R> pageResult = queryMethod.apply(in);
-            List<R> results = pageResult.getList();
-
-            for (R result : results) {
-                exportData.add(convertMethod.apply(result));
-            }
-
-            hasNextPage = pageResult.isHasNextPage();
-            pageNum++;
-        }
-
-        return exportData;
-    }
-
-    /**
-     * 分页查询并转换数据
-     */
-    private <I, R, E> List<E> fetchAndConvertDataNoPageProcess(I in, ExportQueryFunctionNoPageProcess<I, R> queryMethod, Function<R, E> convertMethod) {
-        List<E> exportData = new ArrayList<>();
-
-        List<R> results = queryMethod.apply(in);
-
-        for (R result : results) {
-            exportData.add(convertMethod.apply(result));
-        }
-        return exportData;
+    private void exportSingleSheet(Long taskId, List<?> dataList, Class<?> modelClass, String fileName) {
+        Map<String, List<?>> datas = new HashMap<>(4);
+        datas.put("sheet1", dataList);
+        Map<String, Class<?>> models = new HashMap<>(4);
+        models.put("sheet1", modelClass);
+        exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
     }
 
     /**
@@ -366,43 +392,18 @@ public class ExportTool {
         /**
          * 处理导出请求
          *
-         * @param in 查询条件（需实现PageIn接口）
+         * @param in 查询条件
          * @return 导出任务ID
          */
         com.jiuaoedu.common.Result<Long> handle(@RequestBody @Validated I in);
     }
 
     /**
-     * 导出查询函数：接收查询条件和分页参数，返回分页结果
-     *
-     * @param <I> 查询条件类型，需实现PageIn接口
-     * @param <R> 原始查询结果类型
+     * 自定义异常类，用于类型推导失败的场景
      */
-    @FunctionalInterface
-    public interface ExportQueryFunction<I extends PageIn, R> {
-        /**
-         * 执行分页查询
-         *
-         * @param in 查询条件
-         * @return 分页查询结果
-         */
-        Page<R> apply(I in);
-    }
-
-    /**
-     * 导出查询函数：接收查询条件和分页参数，返回分页结果
-     *
-     * @param <I> 查询条件类型，无需实现PageIn接口
-     * @param <R> 原始查询结果类型
-     */
-    @FunctionalInterface
-    public interface ExportQueryFunctionNoPageProcess<I, R> {
-        /**
-         * 执行列表查询
-         *
-         * @param in 查询条件
-         * @return 列表查询结果
-         */
-        List<R> apply(I in);
+    public static class ExportTypeInferenceException extends RuntimeException {
+        public ExportTypeInferenceException(String message) {
+            super(message);
+        }
     }
 }
