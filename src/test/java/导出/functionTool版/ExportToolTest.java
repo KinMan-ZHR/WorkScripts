@@ -39,7 +39,7 @@ class ExportToolTest {
 
     @BeforeEach
     void setUp() {
-        exportTool = new ExportTool(exportClient, es, log);
+        exportTool = new ExportTool(exportClient);
     }
 
     @Test
@@ -200,7 +200,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<PaginatedQuery> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, 10, "测试导出"
+                    queryFunc, convertFunc, Integer.class, es, 10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -246,7 +246,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<NonPaginatedQuery> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, 10, "测试导出"
+                    queryFunc, convertFunc, Integer.class, es,  10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -293,7 +293,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<Query> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, 10, "测试导出"
+                    queryFunc, convertFunc, Integer.class, es,10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -335,7 +335,7 @@ class ExportToolTest {
 
             // 使用不指定pageSize的重载方法
             ExportTool.ExportHandler<Query> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, "测试导出"
+                    queryFunc, convertFunc, Integer.class, es,"测试导出"
             );
 
             handler.handle(query);

@@ -8,6 +8,9 @@ import com.jiuaoedu.threadpool.ExecutorTask;
 import com.jiuaoedu.threadpool.TaskPool;
 import com.jiuaoedu.web.util.RequestContextHolderUtils;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -34,6 +37,9 @@ import java.util.function.Function;
  *    @Resource
  *    private StudentService studentService;
  *
+ *    private final TaskPool es = TaskPoolFactory.getTaskPool(1, 2, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(300), new ThreadPoolExecutor.AbortPolicy());
+ *
+ *
  *    // 分页查询方法（返回Page<R>）
  *    public Page<Student> queryStudents(StudentQuery in) {
  *        return studentService.queryByPage(in);
@@ -54,6 +60,7 @@ import java.util.function.Function;
  *        exportTool.createSmartExportHandler(
  *            this::queryStudents,    // 分页或非分页查询方法均可
  *            this::convertToExportVo,
+ *            es,
  *            "学生数据导出"
  *        );
  *
@@ -67,22 +74,21 @@ import java.util.function.Function;
  * @author ZhangHaoRan
  * @since 2025/7/1
  */
+@Component
 public class ExportTool {
-    private final ExportClient exportClient;
-    private final TaskPool es;
-    private final Logger log;
-    private static final int DEFAULT_PAGE_SIZE = 10000;
 
+    private static final int DEFAULT_PAGE_SIZE = 10000;
+    private final ExportClient exportClient;
+    private final Logger log = LoggerFactory.getLogger(ExportTool.class);
     // 反射缓存
     private final Map<Class<?>, Method> pageSizeMethodCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Method> pageNumMethodCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Field> pageSizeFieldCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Field> pageNumFieldCache = new ConcurrentHashMap<>();
 
-    public ExportTool(ExportClient exportClient, TaskPool es, Logger log) {
+    @Autowired
+    public ExportTool(ExportClient exportClient) {
         this.exportClient = exportClient;
-        this.es = es;
-        this.log = log;
     }
 
     /**
@@ -91,9 +97,10 @@ public class ExportTool {
     public <I, R, E> ExportHandler<I> createSmartExportHandler(
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
+            TaskPool es,
             String exportFileName) {
 
-        return createSmartExportHandler(queryMethod, convertMethod, DEFAULT_PAGE_SIZE, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, es, DEFAULT_PAGE_SIZE, exportFileName);
     }
 
     /**
@@ -102,11 +109,12 @@ public class ExportTool {
     public <I, R, E> ExportHandler<I> createSmartExportHandler(
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
+            TaskPool es,
             int pageSize,
             String exportFileName) {
 
         Class<E> exportClass = getExportClass(convertMethod);
-        return createSmartExportHandler(queryMethod, convertMethod, exportClass, pageSize, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, exportClass, es, pageSize, exportFileName);
     }
 
     /**
@@ -116,9 +124,10 @@ public class ExportTool {
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
             Class<E> exportClass,
+            TaskPool es,
             String exportFileName) {
 
-        return createSmartExportHandler(queryMethod, convertMethod, exportClass, DEFAULT_PAGE_SIZE, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, exportClass, es, DEFAULT_PAGE_SIZE, exportFileName);
     }
 
     /**
@@ -129,6 +138,7 @@ public class ExportTool {
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
             Class<E> exportClass,
+            TaskPool es,
             int pageSize,
             String exportFileName) {
 
