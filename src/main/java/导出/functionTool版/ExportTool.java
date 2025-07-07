@@ -1,6 +1,8 @@
 package 导出.functionTool版;
 
 import com.alibaba.fastjson.JSON;
+import com.github.pagehelper.ISelect;
+import com.github.pagehelper.page.PageMethod;
 import com.jiuaoedu.common.Page;
 import com.jiuaoedu.contract.edu.servicepublic.pojo.exporttask.CreateTaskIn;
 import com.jiuaoedu.servicepublic.export.service.ExportClient;
@@ -18,10 +20,11 @@ import java.lang.reflect.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 智能导出工具类：自动识别分页需求（解决PG瓶颈），支持灵活配置
- * 不支持流式处理导出，如若需要请联系作者。(因为还需要依赖本身的查询支持流式处理)
+ * 支持分批处理导出。
  * 目前仅用于处理10万条数据以内的大批量导出
  * <p>
  * <strong>使用方式说明<strong>
@@ -115,9 +118,9 @@ public class ExportTool {
             TaskPool es,
             int pageSize,
             String exportFileName) {
-
+        Class<R> queryResultClass = getQueryResultClass(convertMethod);
         Class<E> exportClass = getExportClass(convertMethod);
-        return createSmartExportHandler(queryMethod, convertMethod, exportClass, es, pageSize, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, queryResultClass, exportClass, es, pageSize, exportFileName);
     }
 
     /**
@@ -126,11 +129,12 @@ public class ExportTool {
     public <I, R, E> ExportHandler<I> createSmartExportHandler(
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
+            Class<R> queryResultClass,
             Class<E> exportClass,
             TaskPool es,
             String exportFileName) {
 
-        return createSmartExportHandler(queryMethod, convertMethod, exportClass, es, DEFAULT_PAGE_SIZE, exportFileName);
+        return createSmartExportHandler(queryMethod, convertMethod, queryResultClass, exportClass, es, DEFAULT_PAGE_SIZE, exportFileName);
     }
 
     /**
@@ -140,6 +144,7 @@ public class ExportTool {
     public <I, R, E> ExportHandler<I> createSmartExportHandler(
             Function<I, ?> queryMethod,
             Function<R, E> convertMethod,
+            Class<R> queryResultClass,
             Class<E> exportClass,
             TaskPool es,
             int pageSize,
@@ -156,10 +161,17 @@ public class ExportTool {
                 @Override
                 public void execute() {
                     try {
-                        List<E> exportData = fetchDataIntelligently(
+                        // 获取智能查询结果（包含分页标志）
+                        FetchResult<E> fetchResult = fetchDataIntelligently(
                                 in, queryMethod, convertMethod, pageSize);
 
-                        exportSingleSheet(taskId, exportData, exportClass, exportFileName);
+                        if (fetchResult.isNeedPagination()) {
+                            // 大数据量：使用分页导出（调用exportBigDataFileBySQL）
+                            exportByPagination(taskId, in, queryMethod, convertMethod, queryResultClass, exportClass, pageSize, exportFileName);
+                        } else {
+                            // 小数据量：使用原有单sheet导出
+                            exportSingleSheet(taskId, fetchResult.getData(), exportClass, exportFileName);
+                        }
                     } catch (Exception e) {
                         log.error(exportFileName + "导出失败", e);
                         exportClient.failedExportTask(taskId, e.getMessage());
@@ -171,83 +183,63 @@ public class ExportTool {
         };
     }
 
+    public static class FetchResult<E> {
+        private final long total;
+        private final boolean needPagination;
+        private final List<E> data;
+
+        public FetchResult(long total, boolean needPagination, List<E> data) {
+            this.total = total;
+            this.needPagination = needPagination;
+            this.data = data;
+        }
+
+        // getters
+        public long getTotal() { return total; }
+        public boolean isNeedPagination() { return needPagination; }
+        public List<E> getData() { return data; }
+    }
+
     /**
      * 智能获取数据：自动判断是否分页并执行相应查询
      */
     @SuppressWarnings("unchecked")
-    <I, R, E> List<E> fetchDataIntelligently(
+    <I, R, E> FetchResult<E> fetchDataIntelligently(
             I in, Function<I, ?> queryMethod, Function<R, E> convertMethod, int pageSize) {
 
-        List<E> exportData = new ArrayList<>();
+        int pageNum = 1;
+        // 设置分页参数
+        setPageParamsIfExists(in, pageSize, pageNum);
 
-        // 检查是否支持分页
-        if (hasPaginationParams(in)) {
-            // 分页模式
-            int pageNum = 1;
-            boolean hasNextPage = true;
+        // 执行查询
+        Object result = queryMethod.apply(in);
 
-            while (hasNextPage) {
-                try {
-                    // 设置分页参数
-                    setPageParamsIfExists(in, pageSize, pageNum);
+        List<R> results;
 
-                    // 执行查询
-                    Object result = queryMethod.apply(in);
-
-                    // 处理查询结果
-                    if (result instanceof Page) {
-                        // 分页结果处理
-                        Page<R> pageResult = (Page<R>) result;
-                        List<R> results = pageResult.getList();
-
-                        for (R item : results) {
-                            exportData.add(convertMethod.apply(item));
-                        }
-
-                        hasNextPage = pageResult.isHasNextPage();
-                        pageNum++;
-                    } else if (result instanceof List) {
-                        // 非分页结果（直接返回列表）
-                        List<R> results = (List<R>) result;
-                        for (R item : results) {
-                            exportData.add(convertMethod.apply(item));
-                        }
-                        hasNextPage = false; // 列表结果视为单页数据
-                    } else {
-                        throw new IllegalArgumentException("查询方法返回类型不支持: " +
-                                (result != null ? result.getClass().getName() : "null"));
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException("分页查询失败: " + e.getMessage(), e);
-                }
-            }
+        // 处理查询结果
+        if (result instanceof Page) {
+            // 分页结果处理
+            Page<R> pageResult = (Page<R>) result;
+            results = pageResult.getList();
+        } else if (result instanceof List) {
+            // 非分页结果（直接返回列表）
+            results = (List<R>) result;
         } else {
-            // 非分页模式
-            try {
-                Object result = queryMethod.apply(in);
-
-                if (result instanceof List) {
-                    List<R> results = (List<R>) result;
-                    for (R item : results) {
-                        exportData.add(convertMethod.apply(item));
-                    }
-                } else if (result instanceof Page) {
-                    // 处理用户传入分页方法但未提供分页参数的情况
-                    Page<R> pageResult = (Page<R>) result;
-                    List<R> results = pageResult.getList();
-                    for (R item : results) {
-                        exportData.add(convertMethod.apply(item));
-                    }
-                } else {
-                    throw new IllegalArgumentException("查询方法返回类型不支持: " +
-                            (result != null ? result.getClass().getName() : "null"));
-                }
-            } catch (Exception e) {
-                throw new RuntimeException("非分页查询失败: " + e.getMessage(), e);
-            }
+            throw new IllegalArgumentException("查询方法返回类型不支持: " +
+                    (result != null ? result.getClass().getName() : "null"));
         }
-
-        return exportData;
+        log.info("智能查询：首页条数={}, 分页阈值={}",
+                results.size(), pageSize);
+        if(results.size() < pageSize) {
+            // 如果结果集小于分页大小，则不需要进一步查询
+            List<E> convertedData = results.stream()
+                    .map(convertMethod)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            return new FetchResult<>(results.size(), false, convertedData);
+        } else {
+            return new FetchResult<>(results.size(), true, null);
+        }
     }
 
     /**
@@ -375,16 +367,45 @@ public class ExportTool {
             // 无法自动推导类型，抛出异常
             String inferenceErrorMsg = "无法自动推导导出类型。转换方法：" + convertMethod.getClass().getName() + " 因Lambda/方法引用的泛型擦除。请使用重载方法并显式指定导出类型：createSmartExportHandler(queryMethod, convertMethod, ExportType.class, exportFileName)";
             throw new ExportTypeInferenceException(inferenceErrorMsg);
-        } catch (SecurityException e) {
-            String contextMsg = "反射获取导出类型时无权限（转换方法：" + convertMethod.getClass().getName() + "）";
-            log.error(contextMsg, e);
-            throw new SecurityException(contextMsg, e);
         } catch (NoClassDefFoundError e) {
             String contextMsg = "转换方法依赖的类未找到（转换方法：" + convertMethod.getClass().getName() + "）";
             log.error(contextMsg, e);
             throw new NoClassDefFoundError(contextMsg);
         }
     }
+
+    // 新增：获取转换方法的输入类型（R的类型）
+    private <R, E> Class<R> getQueryResultClass(Function<R, E> convertMethod) {
+        try {
+            // 获取函数式接口的实现类
+            Class<?> functionClass = convertMethod.getClass();
+
+            // 获取接口类型
+            Type[] interfaces = functionClass.getGenericInterfaces();
+            for (Type type : interfaces) {
+                if (type instanceof ParameterizedType) {
+                    ParameterizedType paramType = (ParameterizedType) type;
+                    // 检查是否为Function接口
+                    if (paramType.getRawType() == Function.class) {
+                        // 获取第一个泛型参数（即返回类型）
+                        Type returnType = paramType.getActualTypeArguments()[0];
+                        if (returnType instanceof Class) {
+                            return (Class<R>) returnType;
+                        }
+                    }
+                }
+            }
+
+            // 无法自动推导类型，抛出异常
+            String inferenceErrorMsg = "无法自动推导导出类型。转换方法：" + convertMethod.getClass().getName() + " 因Lambda/方法引用的泛型擦除。请使用重载方法并显式指定导出类型：createSmartExportHandler(queryMethod, convertMethod, ExportType.class, exportFileName)";
+            throw new ExportTypeInferenceException(inferenceErrorMsg);
+        } catch (NoClassDefFoundError e) {
+            String contextMsg = "转换方法依赖的类未找到（转换方法：" + convertMethod.getClass().getName() + "）";
+            log.error(contextMsg, e);
+            throw new NoClassDefFoundError(contextMsg);
+        }
+    }
+
 
     /**
      * 导出单页数据
@@ -395,6 +416,65 @@ public class ExportTool {
         Map<String, Class<?>> models = new HashMap<>(4);
         models.put("sheet1", modelClass);
         exportClient.exportFileWithMultipleSheet(datas, models, fileName + "_" + UUID.randomUUID().toString().substring(0, 5) + ".xlsx", taskId);
+    }
+
+    /**
+     * 分页导出实现（调用exportBigDataFileBySQL）
+     */
+    private <I, R, E> void exportByPagination(
+            Long taskId,
+            I in,
+            Function<I,?> queryMethod,
+            Function<R, E> convertMethod,
+            Class<R> queryResultClass,
+            Class<E> exportClass,
+            int pageSize,
+            String exportFileName) {
+
+        // 创建ISelect实现分页查询
+        ISelect select = () -> {
+            com.github.pagehelper.Page<R> page = PageMethod.getLocalPage();
+            if (page == null) {
+                page = new com.github.pagehelper.Page<>(1, pageSize);
+            }
+            // 设置分页参数
+            setPageParamsIfExists(in, page.getPageSize(), page.getPageNum());
+
+            // 执行分页查询
+            Object resultPage = queryMethod.apply(in);
+            if (resultPage instanceof Page){
+                Page<R> pageResult = (Page<R>) resultPage;
+                page.clear();
+                page.addAll(pageResult.getList());
+                page.setTotal(pageResult.getTotal());
+            }
+
+        };
+
+        // 创建导出对象实例（用于反射）
+        R queryResultInstance = getInstance(queryResultClass);
+        E exportInstance = getInstance(exportClass);
+
+        log.info("开始分页导出：任务ID={}, 文件名={}, 分页大小={}",
+                taskId, exportFileName, pageSize);
+
+        // 调用ExportClient的分页导出方法
+        exportClient.exportBigDataFileBySQL(
+                select,
+                convertMethod,
+                queryResultInstance,
+                exportInstance,
+                exportFileName,
+                taskId
+        );
+    }
+
+    private <T> T getInstance(Class<T> clazz) {
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (Exception e) {
+            throw new RuntimeException("无法实例化类型: " + clazz.getName(), e);
+        }
     }
 
     /**

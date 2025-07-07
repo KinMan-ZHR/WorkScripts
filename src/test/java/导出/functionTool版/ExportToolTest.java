@@ -83,82 +83,6 @@ class ExportToolTest {
         assertFalse(exportTool.hasPaginationParams(new NoPageParams()));
     }
 
-    @Test
-    void testFetchDataIntelligently_PaginatedQuery() {
-        // 准备查询条件（带分页参数）
-        class PaginatedQuery {
-            private int pageSize;
-            private int pageNum;
-
-            public int getPageSize() { return pageSize; }
-            public void setPageSize(int pageSize) { this.pageSize = pageSize; }
-            public int getPageNum() { return pageNum; }
-            public void setPageNum(int pageNum) { this.pageNum = pageNum; }
-        }
-
-        PaginatedQuery query = new PaginatedQuery();
-
-        // 模拟分页查询方法
-        Function<PaginatedQuery, Page<String>> queryFunc = in -> {
-            Page<String> page = new Page<>();
-            if (in.getPageNum() == 1) {
-                page.setList(Arrays.asList("A", "B"));
-                page.setHasNextPage(true);
-            } else {
-                page.setList(Arrays.asList("C"));
-                page.setHasNextPage(false);
-            }
-            return page;
-        };
-
-        // 转换方法
-        Function<String, Integer> convertFunc = s -> {
-            switch (s) {
-                case "A": return 1;
-                case "B": return 2;
-                case "C": return 3;
-                default: throw new IllegalArgumentException("Unknown value: " + s);
-            }
-        };
-
-        // 执行测试
-        List<Integer> result = exportTool.fetchDataIntelligently(query, queryFunc, convertFunc, 2);
-
-        // 验证结果
-        assertEquals(Arrays.asList(1, 2, 3), result);
-    }
-
-    @Test
-    void testFetchDataIntelligently_NonPaginatedQuery() {
-        // 准备查询条件（不带分页参数）
-        class NonPaginatedQuery {
-            private String keyword;
-            public String getKeyword() { return keyword; }
-            public void setKeyword(String keyword) { this.keyword = keyword; }
-        }
-
-        NonPaginatedQuery query = new NonPaginatedQuery();
-
-        // 模拟非分页查询方法（返回List）
-        Function<NonPaginatedQuery, List<String>> queryFunc = in ->
-                Arrays.asList("A", "B", "C");
-
-        // 转换方法
-        Function<String, Integer> convertFunc = s -> {
-            switch (s) {
-                case "A": return 1;
-                case "B": return 2;
-                case "C": return 3;
-                default: throw new IllegalArgumentException("Unknown value: " + s);
-            }
-        };
-
-        // 执行测试
-        List<Integer> result = exportTool.fetchDataIntelligently(query, queryFunc, convertFunc, 10);
-
-        // 验证结果
-        assertEquals(Arrays.asList(1, 2, 3), result);
-    }
 
     @Test
     void testCreateSmartExportHandler_PaginatedSuccess() {
@@ -200,7 +124,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<PaginatedQuery> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, es, 10, "测试导出"
+                    queryFunc, convertFunc, String.class, Integer.class, es, 10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -246,7 +170,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<NonPaginatedQuery> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, es,  10, "测试导出"
+                    queryFunc, convertFunc, String.class, Integer.class, es,  10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -293,7 +217,7 @@ class ExportToolTest {
 
             // 创建处理器并执行
             ExportTool.ExportHandler<Query> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, es,10, "测试导出"
+                    queryFunc, convertFunc, String.class, Integer.class, es,10, "测试导出"
             );
 
             com.jiuaoedu.common.Result<Long> result = handler.handle(query);
@@ -335,7 +259,7 @@ class ExportToolTest {
 
             // 使用不指定pageSize的重载方法
             ExportTool.ExportHandler<Query> handler = exportTool.createSmartExportHandler(
-                    queryFunc, convertFunc, Integer.class, es,"测试导出"
+                    queryFunc, convertFunc, String.class, Integer.class, es,"测试导出"
             );
 
             handler.handle(query);
