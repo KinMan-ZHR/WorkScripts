@@ -23,9 +23,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 智能导出工具类：自动识别分页需求（解决PG瓶颈），支持灵活配置
+ * 智能导出工具类：自动识别分页需求（可部分解决PG瓶颈,依赖开发者指定一个合理的pageSize），支持灵活配置
  * 支持分批处理导出。
- * 目前仅用于处理10万条数据以内的大批量导出
  * <p>
  * <strong>使用方式说明<strong>
  * <P>
