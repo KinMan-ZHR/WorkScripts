@@ -20,9 +20,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * 智能导出工具类：自动识别分页需求，支持灵活配置
+ * 智能导出工具类：自动识别分页需求（解决PG瓶颈），支持灵活配置
+ * 不支持流式处理导出，如若需要请联系作者。(因为还需要依赖本身的查询支持流式处理)
+ * 目前仅用于处理10万条数据以内的大批量导出
  * <p>
- * **使用方式说明**：
+ * <strong>使用方式说明<strong>
+ * <P>
  * 1. 在Spring容器中注入`ExportTool`实例
  * 2. 定义查询方法（返回`Page<R>`或`List<R>`）和转换方法（`R`转`E`）
  * 3. 通过`createSmartExportHandler`创建导出处理器（支持多种重载形式）
