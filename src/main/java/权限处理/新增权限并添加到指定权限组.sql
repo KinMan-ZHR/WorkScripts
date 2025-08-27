@@ -127,3 +127,41 @@ WHERE name = '极运营/教务管理/班级/查看班级'
                                  WHERE url = '/education/classes/export'
                                    AND server_name = 'service-education');
 
+BEGIN TRANSACTION;
+
+-- 插入新权限
+WITH inserted_permission AS (
+    INSERT INTO "service_user"."permission" (
+                                             "id", "name", "server_name", "url", "http_method",
+                                             "create_time", "level", "front", "type", "remark",
+                                             "check_recommit", "parent_id", "tree_level"
+        )
+        VALUES (
+                   nextval('service_user.permission_id_seq'),
+                   '极运营/设置/冻结管理/导出v2',
+                   'api-operation-web',
+                   '/freezeManage/export',
+                   'POST',
+                   now(),
+                   'loginAndAuth',
+                   NULL,
+                   'URL',
+                   NULL,
+                   false,
+                   NULL,
+                   NULL
+               )
+        RETURNING id
+)
+
+-- 更新权限组
+UPDATE service_user.permission_group
+SET permission_id = array_cat(
+        permission_id,
+        ARRAY(SELECT id FROM inserted_permission)
+                    )
+WHERE name = '极运营/系统设置/风控设置/冻结管理/导出'
+  AND NOT permission_id @> ARRAY(SELECT id FROM inserted_permission);
+
+COMMIT;
+
